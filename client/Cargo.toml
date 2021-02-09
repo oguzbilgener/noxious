@@ -1,0 +1,7 @@
+[package]
+name = "noxious-client"
+version = "0.1.0"
+authors = ["Oguz Bilgener <oguz@bilgener.me>"]
+edition = "2018"
+
+[dependencies]
