@@ -21,12 +21,17 @@
 
 //! # noxious
 
-extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
-mod toxics;
+mod server;
 mod toxic;
+mod toxics;
+mod proxy;
+mod link;
+mod signal;
+
+pub use server::run;
 
 #[cfg(test)]
 mod tests {

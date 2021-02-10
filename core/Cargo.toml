@@ -1,11 +1,13 @@
 [package]
-name = "noxious-core"
+name = "noxious"
 version = "0.1.0"
 authors = ["Oguz Bilgener <oguz@bilgener.me>"]
 edition = "2018"
 
 [dependencies]
-tokio = { version = "1", features = ["sync"] }
+tokio = { version = "1", features = ["net", "sync", "signal", "io-util"] }
 serde_json = "^1.0.62"
 serde = "^1.0.123"
 serde_derive = "^1.0.123"
+rand = "0.8.3"
+bytes = "1.0.1"
