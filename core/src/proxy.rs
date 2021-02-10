@@ -1,28 +1,26 @@
 use std::io;
 use std::net::SocketAddr;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpSocket, TcpStream};
 
-use crate::signal::Stop;
 use crate::link::Link;
+use crate::signal::Stop;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ProxyConfig {
+pub(crate) struct ProxyConfig {
     /// An arbitrary name
-    name: String,
+    pub name: String,
     /// The host name and the port the proxy listens on, like 127.0.0.1:5431
-    listen: String,
+    pub listen: String,
     /// The host name and the port the proxy connects to, like 127.0.0:5432
-    upstream: String,
+    pub upstream: String,
     /// Buffer size for this proxy, in bytes
-    buffer_size: usize
+    pub buffer_size: usize,
 }
 
 /// An upstream or downstream connection
 
-
 pub(crate) async fn run_proxy(config: ProxyConfig, mut stop: Stop) -> io::Result<()> {
-    let listener = TcpListener::bind(config.listen).await?;
-    let buffer_size = config.buffer_size;
+    let listener = TcpListener::bind(&config.listen).await?;
 
     while !stop.is_shutdown() {
         let maybe_connection = tokio::select! {
@@ -32,11 +30,27 @@ pub(crate) async fn run_proxy(config: ProxyConfig, mut stop: Stop) -> io::Result
             },
         }?;
 
-        if let Some((stream, addr)) = maybe_connection {
+        if let Some((client_stream, addr)) = maybe_connection {
+            let upstream = TcpStream::connect(&config.upstream).await?;
+
+            let (client_read, client_write) = client_stream.into_split();
+            let (upstream_read, upstream_write) = upstream.into_split();
+
+            let config = config.clone();
+            let config_clone = config.clone();
+
             let stop = stop.clone();
+            let stop_clone = stop.clone();
+
             tokio::spawn(async move {
-                let mut link = Link::new(stream, addr, buffer_size);
-                link.handle(stop).await;
+                Link::new(client_read, upstream_write, addr, config)
+                    .handle(stop)
+                    .await
+            });
+            tokio::spawn(async move {
+                Link::new(upstream_read, client_write, addr, config_clone)
+                    .handle(stop_clone)
+                    .await
             });
         } else {
             break;
@@ -44,4 +58,3 @@ pub(crate) async fn run_proxy(config: ProxyConfig, mut stop: Stop) -> io::Result
     }
     Ok(())
 }
-

@@ -1,33 +1,30 @@
+use crate::proxy::ProxyConfig;
 use crate::signal::Stop;
+use crate::toxic::StreamDirection;
 use bytes::{Buf, BytesMut};
 use std::io;
 use std::net::SocketAddr;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 
-struct Connection {
-    stream: BufWriter<TcpStream>,
-    buffer: BytesMut,
-}
+// TODO add, update, remove toxic events
 
+// TODO: create two Links just like Shopify because Toxics can be added to both
+// downstream and upstream
 pub(crate) struct Link {
-    connection: Connection,
+    config: ProxyConfig,
+    reader: BufReader<OwnedReadHalf>,
+    writer: BufWriter<OwnedWriteHalf>,
     addr: SocketAddr,
 }
 
-impl Connection {
-    pub fn new(stream: TcpStream, buffer_size: usize) -> Self {
-        Self {
-            stream: BufWriter::new(stream),
-            buffer: BytesMut::with_capacity(buffer_size),
-        }
-    }
-}
-
 impl Link {
-    pub(crate) fn new(stream: TcpStream, addr: SocketAddr, buffer_size: usize) -> Self {
+    pub(crate) fn new(read: OwnedReadHalf, write: OwnedWriteHalf, addr: SocketAddr, config: ProxyConfig) -> Self {
         Self {
-            connection: Connection::new(stream, buffer_size),
+            reader: BufReader::with_capacity(config.buffer_size, read),
+            writer: BufWriter::with_capacity(config.buffer_size, write),
+            config,
             addr,
         }
     }
