@@ -7,6 +7,7 @@ use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
+use tokio_stream::StreamExt;
 
 // TODO add, update, remove toxic events
 
@@ -14,16 +15,21 @@ use tokio::net::{TcpListener, TcpStream};
 // downstream and upstream
 pub(crate) struct Link {
     config: ProxyConfig,
-    reader: BufReader<OwnedReadHalf>,
-    writer: BufWriter<OwnedWriteHalf>,
+    reader: OwnedReadHalf,
+    writer: OwnedWriteHalf,
     addr: SocketAddr,
 }
 
 impl Link {
-    pub(crate) fn new(read: OwnedReadHalf, write: OwnedWriteHalf, addr: SocketAddr, config: ProxyConfig) -> Self {
+    pub(crate) fn new(
+        reader: OwnedReadHalf,
+        writer: OwnedWriteHalf,
+        addr: SocketAddr,
+        config: ProxyConfig,
+    ) -> Self {
         Self {
-            reader: BufReader::with_capacity(config.buffer_size, read),
-            writer: BufWriter::with_capacity(config.buffer_size, write),
+            reader,
+            writer,
             config,
             addr,
         }
@@ -31,5 +37,6 @@ impl Link {
 
     pub(crate) async fn handle(&mut self, mut stop: Stop) -> io::Result<()> {
         todo!()
+        // TODO: can we implement the same thing without ToxicStubs?
     }
 }

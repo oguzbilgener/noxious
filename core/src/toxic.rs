@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use tokio::sync::mpsc;
+
 
 pub type PipeFn = fn(ToxicStub);
 
@@ -46,9 +46,4 @@ pub struct Toxic {
     direction: StreamDirection, // excluded from json
     index: usize,               // excluded from Json
     buffer_size: usize,         // excluded from json
-}
-
-pub struct ToxicStub {
-    input: mpsc::Sender<()>,    // this is stream.StreamChunk
-    output: mpsc::Receiver<()>, // this is stream.StreamChunk and probably should not be on this struct
 }

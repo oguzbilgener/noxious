@@ -13,8 +13,6 @@ pub(crate) struct ProxyConfig {
     pub listen: String,
     /// The host name and the port the proxy connects to, like 127.0.0:5432
     pub upstream: String,
-    /// Buffer size for this proxy, in bytes
-    pub buffer_size: usize,
 }
 
 /// An upstream or downstream connection
@@ -41,6 +39,9 @@ pub(crate) async fn run_proxy(config: ProxyConfig, mut stop: Stop) -> io::Result
 
             let stop = stop.clone();
             let stop_clone = stop.clone();
+
+            // TODO: when there is an update in the list of toxics, drop the current link and
+            // start a new one?
 
             tokio::spawn(async move {
                 Link::new(client_read, upstream_write, addr, config)
