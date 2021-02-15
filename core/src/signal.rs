@@ -1,4 +1,4 @@
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::broadcast;
 
 #[derive(Debug)]
 pub(crate) struct Stop {
@@ -8,12 +8,15 @@ pub(crate) struct Stop {
 }
 
 impl Stop {
-    pub(crate) fn new(sender: broadcast::Sender<()>) -> Stop {
-        Stop {
+    pub(crate) fn new() -> (Stop, Stopper) {
+        let (sender, receiver) = broadcast::channel::<()>(1);
+        let stopper = Stopper::new(sender.clone());
+        let stop = Stop {
             shutdown: false,
             receiver: sender.subscribe(),
             sender,
-        }
+        };
+        (stop, stopper)
     }
 
     pub(crate) fn is_shutdown(&self) -> bool {
@@ -29,6 +32,21 @@ impl Stop {
 
         self.shutdown = true;
     }
+
+    /// Creates a sub-signal that has its own stopper but propagates the stop signal from the original
+    pub fn fork(&self) -> (Stop, Stopper) {
+        let (forward_tx, _) = broadcast::channel::<()>(1);
+        let (forked_stop, forked_stopper) = Stop::new();
+        let forked_sender = forked_stop.sender.clone();
+        let original_receiver = self.sender.subscribe();
+        tokio::spawn(async move {
+            while let Ok(_) = original_receiver.recv().await {
+                forked_sender.send(());
+            }
+            drop(forked_sender);
+        });
+        (forked_stop, forked_stopper)
+    }
 }
 
 impl Clone for Stop {
@@ -38,5 +56,20 @@ impl Clone for Stop {
             receiver: self.sender.subscribe(),
             sender: self.sender.clone(),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Stopper {
+    sender: broadcast::Sender<()>,
+}
+
+impl Stopper {
+    pub fn new(sender: broadcast::Sender<()>) -> Self {
+        Self { sender }
+    }
+
+    pub fn stop(self) {
+        self.sender.send(());
     }
 }

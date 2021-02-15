@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-
-pub type PipeFn = fn(ToxicStub);
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StreamDirection {
     #[serde(rename = "downstream")]
@@ -38,6 +35,7 @@ pub enum ToxicKind {
     },
 }
 
+#[derive(Debug, Clone)]
 pub struct Toxic {
     kind: ToxicKind,            // json: attributes
     name: String,               // json: name
@@ -46,4 +44,10 @@ pub struct Toxic {
     direction: StreamDirection, // excluded from json
     index: usize,               // excluded from Json
     buffer_size: usize,         // excluded from json
+}
+
+impl PartialEq for Toxic {
+    fn eq(&self, other: &Self) -> bool {
+        return self.name == other.name
+    }
 }
