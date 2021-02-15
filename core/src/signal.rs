@@ -35,13 +35,15 @@ impl Stop {
 
     /// Creates a sub-signal that has its own stopper but propagates the stop signal from the original
     pub fn fork(&self) -> (Stop, Stopper) {
-        let (forward_tx, _) = broadcast::channel::<()>(1);
         let (forked_stop, forked_stopper) = Stop::new();
         let forked_sender = forked_stop.sender.clone();
-        let original_receiver = self.sender.subscribe();
+        let mut original_receiver = self.sender.subscribe();
         tokio::spawn(async move {
             while let Ok(_) = original_receiver.recv().await {
-                forked_sender.send(());
+                if let Err(_) = forked_sender.send(()) {
+                    // Channel closed, we can no longer forward signal from original to fork
+                    break;
+                }
             }
             drop(forked_sender);
         });
