@@ -17,3 +17,10 @@ tokio-stream = { version = "0.1.3", features = ["io-util"] }
 async-stream = "0.3.0"
 stream-cancel = "0.8.0"
 thiserror = "1.0.23"
+futures = { version = "0.3.12" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

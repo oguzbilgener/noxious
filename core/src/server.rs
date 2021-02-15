@@ -1,8 +1,63 @@
-use std::io;
 use std::future::Future;
-use tokio::net::TcpListener;
+use std::io;
+use tokio::sync::mpsc;
 
-pub async fn run(initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<()> {
+use crate::{
+    proxy::{run_proxy, ProxyConfig, ToxicEvent, Toxics},
+    signal::Stop,
+    toxic::{StreamDirection, Toxic, ToxicKind},
+};
 
+// TODO: maybe make initial_toxics a vec of serialized toxics?
+
+/// Run the Noxious server
+pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<()> {
+    let proxy_config = ProxyConfig {
+        name: "mongo".to_owned(),
+        listen: "127.0.0.1:27016".to_owned(),
+        upstream: "127.0.0.1:27017".to_owned(),
+    };
+
+    let (stop, stopper) = Stop::new();
+
+    let (_event_tx, event_rx) = mpsc::channel::<ToxicEvent>(16);
+
+    let toxic_one = Toxic {
+        kind: ToxicKind::Noop,
+        name: "foo".to_owned(),
+        toxicity: 1.0,
+        direction: StreamDirection::Downstream,
+    };
+
+    let toxic_two = Toxic {
+        kind: ToxicKind::Noop,
+        name: "foo2".to_owned(),
+        toxicity: 1.0,
+        direction: StreamDirection::Downstream,
+    };
+
+    let toxic_three = Toxic {
+        kind: ToxicKind::Noop,
+        name: "foo3".to_owned(),
+        toxicity: 1.0,
+        direction: StreamDirection::Downstream,
+    };
+
+    let initial_toxics = Toxics {
+        upstream: Vec::new(),
+        downstream: vec![toxic_one, toxic_two, toxic_three],
+    };
+
+    tokio::spawn(async move {
+        if let Err(err) = run_proxy(proxy_config, event_rx, initial_toxics, stop).await {
+            println!("run proxy err");
+            dbg!(err);
+        }
+        println!("proxy finished");
+    });
+
+    shutdown.await;
+    println!("shutdown received, sending stop signal");
+    stopper.stop();
     Ok(())
 }

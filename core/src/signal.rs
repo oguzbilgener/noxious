@@ -13,13 +13,13 @@ impl Stop {
         let stopper = Stopper::new(sender.clone());
         let stop = Stop {
             shutdown: false,
-            receiver: sender.subscribe(),
+            receiver,
             sender,
         };
         (stop, stopper)
     }
 
-    pub(crate) fn is_shutdown(&self) -> bool {
+    pub(crate) fn is_stopped(&self) -> bool {
         self.shutdown
     }
 
@@ -72,6 +72,6 @@ impl Stopper {
     }
 
     pub fn stop(self) {
-        self.sender.send(());
+        let _ = self.sender.send(());
     }
 }

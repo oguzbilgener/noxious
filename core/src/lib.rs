@@ -30,6 +30,7 @@ mod toxics;
 mod proxy;
 mod link;
 mod signal;
+mod error;
 
 pub use server::run;
 

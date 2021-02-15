@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::fmt;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StreamDirection {
     #[serde(rename = "downstream")]
     Downstream,
@@ -15,12 +15,14 @@ pub enum ToxicKind {
     Latency {
         latency: i64,
         jitter: i64,
+        buffer_size: usize,
     },
     Timeout {
         timeout: i64,
     },
     Bandwidth {
         rate: i64,
+        buffer_size: usize,
     },
     SlowClose {
         delay: i64,
@@ -37,17 +39,29 @@ pub enum ToxicKind {
 
 #[derive(Debug, Clone)]
 pub struct Toxic {
-    kind: ToxicKind,            // json: attributes
-    name: String,               // json: name
-    toxic_type: String,         // json: type
-    toxicity: f32,              // json: toxicity
-    direction: StreamDirection, // excluded from json
-    index: usize,               // excluded from Json
-    buffer_size: usize,         // excluded from json
+    pub(crate) kind: ToxicKind,            // json: type | attributes
+    pub(crate) name: String,               // json: name
+    pub(crate) toxicity: f32,              // json: toxicity
+    pub(crate) direction: StreamDirection, // excluded from json
+}
+
+impl fmt::Display for StreamDirection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StreamDirection::Downstream => write!(f, "downstream"),
+            StreamDirection::Upstream => write!(f, "upstream"),
+        }
+    }
 }
 
 impl PartialEq for Toxic {
     fn eq(&self, other: &Self) -> bool {
-        return self.name == other.name
+        return self.name == other.name;
+    }
+}
+
+impl Toxic {
+    pub fn get_name(&self) -> &str {
+        &self.name
     }
 }

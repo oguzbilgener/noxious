@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io;
+use std::mem;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -13,6 +14,7 @@ use tokio_stream::StreamExt;
 
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 
+use crate::error::NotFoundError;
 use crate::link::Link;
 use crate::signal::Stop;
 use crate::toxic::{StreamDirection, Toxic};
@@ -31,7 +33,7 @@ pub(crate) struct ProxyConfig {
 pub enum ToxicEventKind {
     ToxicAdd(Toxic),
     ToxicUpdate(Toxic),
-    ToxicRemove,
+    ToxicRemove(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -50,8 +52,8 @@ pub struct Links {
 
 #[derive(Debug, Clone)]
 pub(super) struct Toxics {
-    upstream: Vec<Toxic>,
-    downstream: Vec<Toxic>,
+    pub(super) upstream: Vec<Toxic>,
+    pub(super) downstream: Vec<Toxic>,
 }
 
 pub struct ProxyState {
@@ -66,12 +68,18 @@ pub(crate) async fn run_proxy(
     mut stop: Stop,
 ) -> io::Result<()> {
     let listener = TcpListener::bind(&config.listen).await?;
+    println!("listening on port {}", &config.listen);
 
     let state = Arc::new(Mutex::new(ProxyState::new()));
 
-    tokio::spawn(listen_toxic_events(state.clone(), receiver, stop.clone()));
+    tokio::spawn(listen_toxic_events(
+        state.clone(),
+        receiver,
+        stop.clone(),
+        config.clone(),
+    ));
 
-    while !stop.is_shutdown() {
+    while !stop.is_stopped() {
         let maybe_connection = tokio::select! {
             res = listener.accept() => Ok::<Option<(TcpStream, SocketAddr)>, io::Error>(Some(res?)),
             _ = stop.recv() => {
@@ -142,24 +150,22 @@ fn create_links(
     }
 
     let mut upstream_link = Link::new(
-        client_read,
-        upstream_write,
         addr,
         StreamDirection::Upstream,
         toxics.upstream,
         config.clone(),
+        stop.clone(),
     );
     let mut client_link = Link::new(
-        upstream_read,
-        client_write,
         addr,
         StreamDirection::Downstream,
         toxics.downstream,
         config.clone(),
+        stop.clone(),
     );
 
-    upstream_link.establish(stop.clone())?;
-    client_link.establish(stop.clone())?;
+    upstream_link.establish(client_read, upstream_write);
+    client_link.establish(upstream_read, client_write);
 
     state.clients.insert(
         addr,
@@ -183,23 +189,64 @@ async fn listen_toxic_events(
     state: Arc<Mutex<ProxyState>>,
     mut receiver: mpsc::Receiver<ToxicEvent>,
     mut stop: Stop,
+    config: ProxyConfig,
 ) {
-    while !stop.is_shutdown() {
-        let maybe_event = tokio::select! {
+    while !stop.is_stopped() {
+        let maybe_event: Option<ToxicEvent> = tokio::select! {
             res = receiver.recv() => res,
             _ = stop.recv() => None,
         };
 
         if let Some(event) = maybe_event {
-            let mut state = state.lock().expect("ProxyState poisoned for upstream {}");
-            if let Some(links) = state.clients.remove(&event.addr) {
+            let removed_link = state
+                .lock()
+                .expect("ProxyState poisoned for upstream {}")
+                .clients
+                .remove(&event.addr);
+
+            if let Some(links) = removed_link {
                 let (link_to_recreate, link_to_keep) = match event.direction {
                     StreamDirection::Upstream => (links.upstream, links.client),
                     StreamDirection::Downstream => (links.client, links.upstream),
                 };
-                let (reader, writer, old_toxics) = link_to_recreate.disband();
+                let (reader, writer, old_toxics) = link_to_recreate.disband().await;
 
+                if let Ok(updated_toxics) = build_toxic_list(old_toxics, event.kind) {
+                    let mut updated_link = Link::new(
+                        event.addr,
+                        event.direction,
+                        updated_toxics,
+                        config.clone(),
+                        stop.clone(),
+                    );
+                    // TODO: stop the proxy if we cannot establish link
+                    updated_link.establish(reader, writer);
 
+                    let links = if event.direction == StreamDirection::Upstream {
+                        Links {
+                            upstream: updated_link,
+                            client: link_to_keep,
+                        }
+                    } else {
+                        Links {
+                            upstream: link_to_keep,
+                            client: updated_link,
+                        }
+                    };
+
+                    state
+                        .lock()
+                        .expect("ProxyState poisoned for upstream {}")
+                        .clients
+                        .insert(event.addr, links);
+                } else {
+                    // TODO: trace
+                    println!(
+                        "State error: Attempted to update or remove nonexistent toxic, for {} for address {}",
+                        event.direction,
+                        event.addr
+                    );
+                }
             } else {
                 // TODO: trace
                 println!(
@@ -209,4 +256,30 @@ async fn listen_toxic_events(
             }
         }
     }
+}
+
+fn build_toxic_list(
+    mut toxics: Vec<Toxic>,
+    event_kind: ToxicEventKind,
+) -> Result<Vec<Toxic>, NotFoundError> {
+    match event_kind {
+        ToxicEventKind::ToxicAdd(toxic) => {
+            toxics.push(toxic);
+        }
+        ToxicEventKind::ToxicUpdate(toxic) => {
+            let old_toxic = toxics
+                .iter_mut()
+                .find(|el| el.get_name() == toxic.get_name())
+                .ok_or(NotFoundError)?;
+            let _ = mem::replace(old_toxic, toxic);
+        }
+        ToxicEventKind::ToxicRemove(toxic_name) => {
+            let index = toxics
+                .iter()
+                .position(|el| el.get_name() == toxic_name)
+                .ok_or(NotFoundError)?;
+            toxics.remove(index);
+        }
+    }
+    Ok(toxics)
 }
