@@ -15,7 +15,7 @@ use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 
 use crate::link::Link;
 use crate::signal::Stop;
-use crate::toxic::Toxic;
+use crate::toxic::{StreamDirection, Toxic};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProxyConfig {
@@ -28,16 +28,30 @@ pub(crate) struct ProxyConfig {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ToxicEvent {
-    ToxicAdd { addr: SocketAddr, toxic: Toxic },
-    ToxicUpdate { addr: SocketAddr, toxic: Toxic },
-    ToxicRemove { addr: SocketAddr, toxic_name: String },
+pub enum ToxicEventKind {
+    ToxicAdd(Toxic),
+    ToxicUpdate(Toxic),
+    ToxicRemove,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToxicEvent {
+    addr: SocketAddr,
+    direction: StreamDirection,
+    toxic_name: String,
+    kind: ToxicEventKind,
 }
 
 #[derive(Debug)]
 pub struct Links {
     upstream: Link,
     client: Link,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct Toxics {
+    upstream: Vec<Toxic>,
+    downstream: Vec<Toxic>,
 }
 
 pub struct ProxyState {
@@ -48,6 +62,7 @@ pub struct ProxyState {
 pub(crate) async fn run_proxy(
     config: ProxyConfig,
     receiver: mpsc::Receiver<ToxicEvent>,
+    initial_toxics: Toxics,
     mut stop: Stop,
 ) -> io::Result<()> {
     let listener = TcpListener::bind(&config.listen).await?;
@@ -81,6 +96,7 @@ pub(crate) async fn run_proxy(
                 addr,
                 &config,
                 &mut stop,
+                initial_toxics.clone(),
                 client_read,
                 client_write,
                 upstream_read,
@@ -104,20 +120,12 @@ fn create_links(
     addr: SocketAddr,
     config: &ProxyConfig,
     stop: &mut Stop,
+    toxics: Toxics,
     client_read: FramedRead<OwnedReadHalf, BytesCodec>,
     client_write: FramedWrite<OwnedWriteHalf, BytesCodec>,
     upstream_read: FramedRead<OwnedReadHalf, BytesCodec>,
     upstream_write: FramedWrite<OwnedWriteHalf, BytesCodec>,
 ) -> io::Result<()> {
-    let config = config.clone();
-    let config_clone = config.clone();
-
-    let stop_upstream = stop.clone();
-    let stop_client = stop.clone();
-
-    // TODO: when there is an update in the list of toxics, drop the current link and
-    // start a new one?
-
     let mut state = state.lock().expect(&format!(
         "ProxyState poisoned for upstream {}",
         addr.to_string()
@@ -133,11 +141,25 @@ fn create_links(
         ));
     }
 
-    let mut upstream_link = Link::new(client_read, upstream_write, addr, config);
-    let mut client_link = Link::new(upstream_read, client_write, addr, config_clone);
+    let mut upstream_link = Link::new(
+        client_read,
+        upstream_write,
+        addr,
+        StreamDirection::Upstream,
+        toxics.upstream,
+        config.clone(),
+    );
+    let mut client_link = Link::new(
+        upstream_read,
+        client_write,
+        addr,
+        StreamDirection::Downstream,
+        toxics.downstream,
+        config.clone(),
+    );
 
-    upstream_link.establish(stop_upstream);
-    client_link.establish(stop_client);
+    upstream_link.establish(stop.clone())?;
+    client_link.establish(stop.clone())?;
 
     state.clients.insert(
         addr,
@@ -164,15 +186,27 @@ async fn listen_toxic_events(
 ) {
     while !stop.is_shutdown() {
         let maybe_event = tokio::select! {
-            res = receiver.recv() => Some(res),
+            res = receiver.recv() => res,
             _ = stop.recv() => None,
         };
 
         if let Some(event) = maybe_event {
             let mut state = state.lock().expect("ProxyState poisoned for upstream {}");
-            // let links = state
-            // Rebuild the links
+            if let Some(links) = state.clients.remove(&event.addr) {
+                let (link_to_recreate, link_to_keep) = match event.direction {
+                    StreamDirection::Upstream => (links.upstream, links.client),
+                    StreamDirection::Downstream => (links.client, links.upstream),
+                };
+                let (reader, writer, old_toxics) = link_to_recreate.disband();
 
+
+            } else {
+                // TODO: trace
+                println!(
+                    "State error: Attempted to remove nonexistent link, for address {}",
+                    event.addr
+                );
+            }
         }
     }
 }
