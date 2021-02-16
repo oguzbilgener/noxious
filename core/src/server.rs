@@ -63,7 +63,7 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
         println!("proxy finished");
     });
 
-    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     println!(" -- firing event remove a toxic");
 
     event_tx.send(ToxicEvent::new(

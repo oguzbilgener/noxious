@@ -3,7 +3,7 @@ use tokio::{sync::broadcast, task::JoinHandle};
 
 #[derive(Debug)]
 pub(crate) struct Stop {
-    stop: bool,
+    stopped: bool,
     receiver: broadcast::Receiver<()>,
     sender: broadcast::Sender<()>,
 }
@@ -13,7 +13,7 @@ impl Stop {
         let (sender, receiver) = broadcast::channel::<()>(1);
         let stopper = Stopper::new(sender.clone());
         let stop = Stop {
-            stop: false,
+            stopped: false,
             receiver,
             sender,
         };
@@ -21,17 +21,17 @@ impl Stop {
     }
 
     pub(crate) fn is_stopped(&self) -> bool {
-        self.stop
+        self.stopped
     }
 
     pub(crate) async fn recv(&mut self) {
-        if self.stop {
+        if self.stopped {
             return;
         }
 
         let _ = self.receiver.recv().await;
 
-        self.stop = true;
+        self.stopped = true;
     }
 
     /// Creates a sub-signal that has its own stopper but propagates the stop signal from the original
@@ -55,7 +55,7 @@ impl Stop {
 impl Clone for Stop {
     fn clone(&self) -> Self {
         Self {
-            stop: self.stop,
+            stopped: self.stopped,
             receiver: self.sender.subscribe(),
             sender: self.sender.clone(),
         }
@@ -88,18 +88,23 @@ impl Stopper {
     }
 }
 
-pub(crate) fn spawn_stoppable<T>(mut stop: Stop, task: T) -> JoinHandle<Option<T::Output>>
+pub(crate) fn spawn_stoppable<T>(label: &str, mut stop: Stop, task: T) -> JoinHandle<Option<T::Output>>
 where
     T: Future + Send + 'static,
     T::Output: Send + 'static,
 {
+    let label = label.to_owned();
     tokio::spawn(async move {
         if stop.is_stopped() {
+            println!(" [{}] ss already stopped", label);
             return None;
         }
         tokio::select! {
             res = task => Some(res),
-            _ = stop.recv() => None,
+            _ = stop.recv() => {
+                println!(" [{}] asked to stop", label);
+                None
+            },
         }
     })
 }

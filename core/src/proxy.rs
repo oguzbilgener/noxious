@@ -1,21 +1,18 @@
 use futures::{stream, StreamExt};
+use std::collections::HashMap;
 use std::io;
 use std::mem;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use std::{borrow::BorrowMut, collections::HashMap};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-use tokio::{
-    io::AsyncWriteExt,
-    net::{TcpListener, TcpSocket, TcpStream},
-};
 
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 
 use crate::error::NotFoundError;
 use crate::link::Link;
-use crate::signal::{spawn_stoppable, Stop};
+use crate::signal::Stop;
 use crate::toxic::{StreamDirection, Toxic};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -87,7 +84,7 @@ pub(crate) async fn run_proxy(
         }?;
 
         if let Some((client_stream, addr)) = maybe_connection {
-            println!("~~ new client connected at {}", addr);
+            println!("\n\n~~ new client connected at {}", addr);
             // TODO: wrap this error? (could not connect to upstream)
             let upstream = TcpStream::connect(&config.upstream).await?;
 
@@ -170,16 +167,22 @@ fn create_links(
     let upstream_handle = upstream_link.establish(client_read, upstream_write);
     let downstream_handle = client_link.establish(upstream_read, client_write);
 
+    let stop = stop.clone();
     let addr = addr.clone();
     let state = state.clone();
-    spawn_stoppable(stop.clone(), async move {
+    tokio::spawn(async move {
+        // No need to listen for the stop signal here, we're ending as soon as one of the tasks have stopped.
         let some_handle = tokio::select! {
             up = upstream_handle => up,
             down = downstream_handle => down
         };
         println!("joined upstream and downstream {:?}", some_handle);
+        if stop.is_stopped() {
+            println!("already stopped, so returning");
+            return;
+        }
         links_stopper.stop();
-        println!("removing {} from clients list as we disconnected", &addr);
+        println!("\n\nremoving {} from clients list as we disconnected", &addr);
         let mut state = state.lock().expect("ProxyState poisoned");
         state.clients.remove(&addr);
     });
@@ -265,6 +268,7 @@ async fn listen_toxic_events(
                         }
                     };
 
+                    println!("Inserting new links");
                     state
                         .lock()
                         .expect("ProxyState poisoned")
