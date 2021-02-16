@@ -1,22 +1,21 @@
-use std::collections::HashMap;
+use futures::{stream, StreamExt};
 use std::io;
 use std::mem;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::{borrow::BorrowMut, collections::HashMap};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::mpsc;
 use tokio::{
     io::AsyncWriteExt,
     net::{TcpListener, TcpSocket, TcpStream},
 };
-use tokio_stream::wrappers::SplitStream;
-use tokio_stream::StreamExt;
 
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 
 use crate::error::NotFoundError;
 use crate::link::Link;
-use crate::signal::Stop;
+use crate::signal::{spawn_stoppable, Stop};
 use crate::toxic::{StreamDirection, Toxic};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,7 +37,7 @@ pub enum ToxicEventKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToxicEvent {
-    addr: SocketAddr,
+    proxy_name: String,
     direction: StreamDirection,
     toxic_name: String,
     kind: ToxicEventKind,
@@ -135,12 +134,12 @@ fn create_links(
     upstream_read: FramedRead<OwnedReadHalf, BytesCodec>,
     upstream_write: FramedWrite<OwnedWriteHalf, BytesCodec>,
 ) -> io::Result<()> {
-    let mut state = state.lock().expect(&format!(
+    let mut current_state = state.lock().expect(&format!(
         "ProxyState poisoned for upstream {}",
         addr.to_string()
     ));
 
-    if state.clients.contains_key(&addr) {
+    if current_state.clients.contains_key(&addr) {
         return Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
             format!(
@@ -150,25 +149,41 @@ fn create_links(
         ));
     }
 
+    let (links_stop, links_stopper) = stop.fork();
+
     let mut upstream_link = Link::new(
         addr,
         StreamDirection::Upstream,
         toxics.upstream,
         config.clone(),
-        stop.clone(),
+        links_stop.clone(),
     );
     let mut client_link = Link::new(
         addr,
         StreamDirection::Downstream,
         toxics.downstream,
         config.clone(),
-        stop.clone(),
+        links_stop.clone(),
     );
 
-    upstream_link.establish(client_read, upstream_write);
-    client_link.establish(upstream_read, client_write);
+    let upstream_handle = upstream_link.establish(client_read, upstream_write);
+    let downstream_handle = client_link.establish(upstream_read, client_write);
 
-    state.clients.insert(
+    let addr = addr.clone();
+    let state = state.clone();
+    spawn_stoppable(stop.clone(), async move {
+        let some_handle = tokio::select! {
+            up = upstream_handle => up,
+            down = downstream_handle => down
+        };
+        println!("joined upstream and downstream {:?}", some_handle);
+        links_stopper.stop();
+        println!("removing {} from clients list as we disconnected", &addr);
+        let mut state = state.lock().expect("ProxyState poisoned");
+        state.clients.remove(&addr);
+    });
+
+    current_state.clients.insert(
         addr,
         Links {
             upstream: upstream_link,
@@ -197,25 +212,37 @@ async fn listen_toxic_events(
             res = receiver.recv() => res,
             _ = stop.recv() => None,
         };
+        let stop = stop.clone();
 
         if let Some(event) = maybe_event {
-            let removed_link = state
-                .lock()
-                .expect("ProxyState poisoned for upstream {}")
-                .clients
-                .remove(&event.addr);
+            // Recreate all the links. The proxy may be unresponsive while updating
 
-            if let Some(links) = removed_link {
+            let old_map = {
+                let mut current_state = state.lock().expect("ProxyState poisoned for upstream {}");
+                mem::replace(&mut current_state.clients, HashMap::new())
+            };
+            let direction = event.direction;
+            let kind = event.kind.clone();
+
+            let mut elements = stream::iter(old_map);
+            while let Some((addr, links)) = elements.next().await {
                 let (link_to_recreate, link_to_keep) = match event.direction {
                     StreamDirection::Upstream => (links.upstream, links.client),
                     StreamDirection::Downstream => (links.client, links.upstream),
                 };
-                let (reader, writer, old_toxics) = link_to_recreate.disband().await;
+                let (reader, writer, old_toxics) = match link_to_recreate.disband().await {
+                    Err(err) => {
+                        // TODO: is this really an error
+                        println!("disband recv err {:?}", err);
+                        return;
+                    }
+                    Ok(res) => res,
+                };
 
-                if let Ok(updated_toxics) = build_toxic_list(old_toxics, event.kind) {
+                if let Ok(updated_toxics) = build_toxic_list(old_toxics, kind.clone()) {
                     let mut updated_link = Link::new(
-                        event.addr,
-                        event.direction,
+                        addr,
+                        direction,
                         updated_toxics,
                         config.clone(),
                         stop.clone(),
@@ -223,7 +250,7 @@ async fn listen_toxic_events(
                     // TODO: stop the proxy if we cannot establish link
                     updated_link.establish(reader, writer);
 
-                    let links = if event.direction == StreamDirection::Upstream {
+                    let links = if direction == StreamDirection::Upstream {
                         Links {
                             upstream: updated_link,
                             client: link_to_keep,
@@ -237,23 +264,17 @@ async fn listen_toxic_events(
 
                     state
                         .lock()
-                        .expect("ProxyState poisoned for upstream {}")
+                        .expect("ProxyState poisoned")
                         .clients
-                        .insert(event.addr, links);
+                        .insert(addr, links);
                 } else {
                     // TODO: trace
                     println!(
                         "State error: Attempted to update or remove nonexistent toxic, for {} for address {}",
-                        event.direction,
-                        event.addr
+                        direction,
+                        addr
                     );
                 }
-            } else {
-                // TODO: trace
-                println!(
-                    "State error: Attempted to remove nonexistent link, for address {}",
-                    event.addr
-                );
             }
         }
     }
@@ -283,4 +304,20 @@ fn build_toxic_list(
         }
     }
     Ok(toxics)
+}
+
+impl ToxicEvent {
+    pub fn new(
+        proxy_name: &str,
+        direction: StreamDirection,
+        toxic_name: &str,
+        kind: ToxicEventKind,
+    ) -> Self {
+        ToxicEvent {
+            proxy_name: proxy_name.to_owned(),
+            direction,
+            toxic_name: toxic_name.to_owned(),
+            kind,
+        }
+    }
 }

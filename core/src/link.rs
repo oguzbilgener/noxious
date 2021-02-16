@@ -1,4 +1,4 @@
-use crate::signal::{Stop, Stopper};
+use crate::signal::{spawn_stoppable, Stop, Stopper};
 use crate::toxic::{StreamDirection, Toxic};
 use crate::toxics;
 use crate::{proxy::ProxyConfig, toxic::ToxicKind};
@@ -60,7 +60,7 @@ impl Link {
         &mut self,
         mut reader: FramedRead<OwnedReadHalf, BytesCodec>,
         mut writer: FramedWrite<OwnedWriteHalf, BytesCodec>,
-    ) {
+    ) -> JoinHandle<Option<()>> {
         // TODO: do we need to add one more read and write streams to both ends?
 
         let toxics = self.toxics.clone();
@@ -70,49 +70,54 @@ impl Link {
         let direction = self.direction;
 
         if toxics.is_empty() {
-            tokio::spawn(async move {
+            spawn_stoppable(self.stop.clone(), async move {
                 println!("{} no toxics, just connect both ends", direction);
-                // TODO: obey the Stop signal
                 let forward_res = forward(&mut reader, &mut writer).await;
                 println!("{} no toxics forward ended", direction);
                 if let Err(err) = forward_res {
                     dbg!(err);
                 }
-
                 let _ = disband_sender.send((reader, writer));
-            });
+            })
         } else {
             let (left_end_tx, left_end_rx) = futures_mpsc::channel::<Bytes>(1);
             let (right_end_tx, right_end_rx) = futures_mpsc::channel::<Bytes>(1);
-            let close_read_join = tokio::spawn(async move {
-                // TODO: obey the Stop signal
+            let close_read_join = spawn_stoppable(self.stop.clone(), async move {
                 pin!(left_end_tx);
                 forward_read(reader, left_end_tx).await
             });
-            let close_write_join = tokio::spawn(async move {
-                // TODO: obey the Stop signal
+            let close_write_join = spawn_stoppable(self.stop.clone(), async move {
                 pin!(right_end_rx);
                 forward_write(right_end_rx, writer).await
             });
 
             let stop = self.stop.clone();
-            tokio::spawn(async move {
+            let join_handle = spawn_stoppable(self.stop.clone(), async move {
                 let result: Result<
                     (
-                        io::Result<FramedRead<OwnedReadHalf, BytesCodec>>,
-                        io::Result<FramedWrite<OwnedWriteHalf, BytesCodec>>,
+                        Option<io::Result<FramedRead<OwnedReadHalf, BytesCodec>>>,
+                        Option<io::Result<FramedWrite<OwnedWriteHalf, BytesCodec>>>,
                     ),
                     tokio::task::JoinError,
                 > = tokio::try_join!(close_read_join, close_write_join);
                 match result {
                     Ok((read_res, write_res)) => {
-                        if let Ok(reader) = read_res {
-                            if let Ok(writer) = write_res {
-                                println!("{} disband ready", direction);
-                                let _ = disband_sender.send((reader, writer));
+                        match (read_res, write_res) {
+                            (None, _) | (_, None) => {
+                                println!("welp...");
                                 return;
                             }
+                            (Some(read_res), Some(write_res)) => {
+                                if let Ok(reader) = read_res {
+                                    if let Ok(writer) = write_res {
+                                        println!("{} disband ready", direction);
+                                        let _ = disband_sender.send((reader, writer));
+                                        return;
+                                    }
+                                }
+                            }
                         }
+
                         panic!("read or write sub task failed");
                     }
                     Err(err) => {
@@ -128,7 +133,7 @@ impl Link {
                 // TODO: Get the desired channel buffer size for the toxic (in number of chunks)
                 // This is 1024 for the Latency toxic and for other toxics, the channel is unbuffered.
                 let (pipe_tx, pipe_rx) = futures_mpsc::channel::<Bytes>(1);
-                tokio::spawn(async move {
+                spawn_stoppable(stop.clone(), async move {
                     // TODO: obey the Stop signal
                     let reader = prev_pipe_read_rx;
                     pin!(reader);
@@ -141,10 +146,11 @@ impl Link {
                 prev_pipe_read_rx = pipe_rx;
             }
 
-            tokio::spawn(async move {
-                // TODO: obey the Stop signal
+            spawn_stoppable(stop.clone(), async move {
                 prev_pipe_read_rx.map(Ok).forward(right_end_tx).await
             });
+
+            join_handle
         }
     }
 
@@ -152,20 +158,19 @@ impl Link {
     /// stream and the sink at the two ends.
     pub(super) async fn disband(
         self,
-    ) -> (
+    ) -> io::Result<(
         FramedRead<OwnedReadHalf, BytesCodec>,
         FramedWrite<OwnedWriteHalf, BytesCodec>,
         Vec<Toxic>,
-    ) {
+    )> {
         self.stopper.stop();
         let (reader, writer) = self
             .disband_receiver
             .expect("State error: Link already disbanded, or never established")
             .await
-            .expect("Channel closed unexpectedly");
-        let toxics = self.toxics;
+            .map_err(|_| io::Error::new(io::ErrorKind::Other, "already closed?"))?;
 
-        (reader, writer, toxics)
+        Ok((reader, writer, self.toxics))
     }
 }
 
@@ -198,17 +203,13 @@ impl ToxicRunner {
         match self.toxic.kind {
             // TODO: avoid cloning toxic if possible
             ToxicKind::Noop => toxics::run_noop(self.toxic.clone(), input, output).await,
-            ToxicKind::Latency {
-                latency,
-                jitter,
-                buffer_size,
-            } => {
+            ToxicKind::Latency { latency, jitter } => {
                 todo!()
             }
             ToxicKind::Timeout { timeout } => {
                 todo!()
             }
-            ToxicKind::Bandwidth { rate, buffer_size } => {
+            ToxicKind::Bandwidth { rate } => {
                 todo!()
             }
             ToxicKind::SlowClose { delay } => {

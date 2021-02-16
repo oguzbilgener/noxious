@@ -3,7 +3,7 @@ use std::io;
 use tokio::sync::mpsc;
 
 use crate::{
-    proxy::{run_proxy, ProxyConfig, ToxicEvent, Toxics},
+    proxy::{run_proxy, ProxyConfig, ToxicEvent, ToxicEventKind, Toxics},
     signal::Stop,
     toxic::{StreamDirection, Toxic, ToxicKind},
 };
@@ -20,7 +20,7 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
 
     let (stop, stopper) = Stop::new();
 
-    let (_event_tx, event_rx) = mpsc::channel::<ToxicEvent>(16);
+    let (event_tx, event_rx) = mpsc::channel::<ToxicEvent>(16);
 
     let toxic_one = Toxic {
         kind: ToxicKind::Noop,
@@ -62,6 +62,15 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
         }
         println!("proxy finished");
     });
+
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+    event_tx.send(ToxicEvent::new(
+        "mongo",
+        StreamDirection::Downstream,
+        "foo",
+        ToxicEventKind::ToxicRemove("foo".to_owned()),
+    )).await;
 
     shutdown.await;
     println!("shutdown received, sending stop signal");
