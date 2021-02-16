@@ -9,8 +9,8 @@ pub async fn run_noop(
     input: impl Stream<Item = Bytes>,
     output: impl Sink<Bytes>,
 ) -> io::Result<()> {
-    println!("run noop");
+    println!("{} run noop", toxic.direction);
     let res = input.map(Ok).forward(output).await;
-    println!("forward ended");
+    println!("{} forward ended", toxic.direction);
     Ok(())
 }

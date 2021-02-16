@@ -43,8 +43,15 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
         direction: StreamDirection::Downstream,
     };
 
+    let toxic_up_one = Toxic {
+        kind: ToxicKind::Noop,
+        name: "up_1".to_owned(),
+        toxicity: 1.0,
+        direction: StreamDirection::Upstream,
+    };
+
     let initial_toxics = Toxics {
-        upstream: Vec::new(),
+        upstream: vec![toxic_up_one],
         downstream: vec![toxic_one, toxic_two, toxic_three],
     };
 

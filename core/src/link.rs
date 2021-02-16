@@ -3,14 +3,19 @@ use crate::toxic::{StreamDirection, Toxic};
 use crate::toxics;
 use crate::{proxy::ProxyConfig, toxic::ToxicKind};
 use bytes::{Buf, Bytes, BytesMut};
+use futures::channel::mpsc as futures_mpsc;
 use futures::{Sink, Stream};
 use futures::{SinkExt, StreamExt};
+use futures_mpsc::SendError;
 use std::io;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::pin;
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 // downstream and upstream
 #[derive(Debug)]
@@ -40,8 +45,6 @@ impl Link {
     ) -> Self {
         let (stop, stopper) = stop.fork();
         let link = Link {
-            // reader,
-            // writer,
             config,
             toxics,
             upstream_addr,
@@ -64,19 +67,83 @@ impl Link {
 
         let (disband_sender, disband_receiver) = oneshot::channel::<Ends>();
         self.disband_receiver = Some(disband_receiver);
+        let direction = self.direction;
 
-        tokio::spawn(async move {
-            if toxics.is_empty() {
-                println!("no toxics, just connect both ends");
+        if toxics.is_empty() {
+            tokio::spawn(async move {
+                println!("{} no toxics, just connect both ends", direction);
+                // TODO: obey the Stop signal
                 let forward_res = forward(&mut reader, &mut writer).await;
-                println!("no toxics forward ended");
-                dbg!(forward_res);
-            } else {
-                let r2 = forward_read(&mut reader);
-                let left = BufReader::new(r2);
+                println!("{} no toxics forward ended", direction);
+                if let Err(err) = forward_res {
+                    dbg!(err);
+                }
+
+                let _ = disband_sender.send((reader, writer));
+            });
+        } else {
+            let (left_end_tx, left_end_rx) = futures_mpsc::channel::<Bytes>(1);
+            let (right_end_tx, right_end_rx) = futures_mpsc::channel::<Bytes>(1);
+            let close_read_join = tokio::spawn(async move {
+                // TODO: obey the Stop signal
+                pin!(left_end_tx);
+                forward_read(reader, left_end_tx).await
+            });
+            let close_write_join = tokio::spawn(async move {
+                // TODO: obey the Stop signal
+                pin!(right_end_rx);
+                forward_write(right_end_rx, writer).await
+            });
+
+            let stop = self.stop.clone();
+            tokio::spawn(async move {
+                let result: Result<
+                    (
+                        io::Result<FramedRead<OwnedReadHalf, BytesCodec>>,
+                        io::Result<FramedWrite<OwnedWriteHalf, BytesCodec>>,
+                    ),
+                    tokio::task::JoinError,
+                > = tokio::try_join!(close_read_join, close_write_join);
+                match result {
+                    Ok((read_res, write_res)) => {
+                        if let Ok(reader) = read_res {
+                            if let Ok(writer) = write_res {
+                                println!("{} disband ready", direction);
+                                let _ = disband_sender.send((reader, writer));
+                                return;
+                            }
+                        }
+                        panic!("read or write sub task failed");
+                    }
+                    Err(err) => {
+                        panic!("read or write sub task failed {:?}", err);
+                    }
+                }
+            });
+
+            let mut prev_pipe_read_rx = left_end_rx;
+
+            for toxic in toxics {
+                let stop = stop.clone();
+                let (pipe_tx, pipe_rx) = futures_mpsc::channel::<Bytes>(1);
+                tokio::spawn(async move {
+                    // TODO: obey the Stop signal
+                    let reader = prev_pipe_read_rx;
+                    pin!(reader);
+                    pin!(pipe_tx);
+                    let res = ToxicRunner::new(toxic).run(reader, pipe_tx, stop).await;
+                    if let Err(err) = res {
+                        dbg!(err);
+                    }
+                });
+                prev_pipe_read_rx = pipe_rx;
             }
-            let _ = disband_sender.send((reader, writer));
-        });
+
+            tokio::spawn(async move {
+                // TODO: obey the Stop signal
+                prev_pipe_read_rx.map(Ok).forward(right_end_tx).await
+            });
+        }
     }
 
     /// Cuts all the streams, stops all the ToxicRunner tasks, returns the original
@@ -168,57 +235,55 @@ async fn forward(
             Ok(chunk) => {
                 if let Err(err) = writer.send(chunk.into()).await {
                     // writer channel closed
+                    println!("forward writer channel closed?");
                     return Err(err);
                 }
             }
             Err(err) => {
                 // reader channel closed
+                println!("forward reader channel closed?");
                 return Err(err);
             }
         }
     }
+    println!("forward closed??");
     Ok(())
 }
 
-async fn forward2(
-    mut reader: std::pin::Pin<&mut impl Stream<Item = Bytes>>,
-    mut writer: std::pin::Pin<&mut impl Sink<Bytes>>,
-) -> io::Result<()> {
-    while let Some(chunk) = reader.next().await {
-        if let Err(err) = writer.send(chunk.into()).await {
-            // writer channel closed
-            return Err(io::Error::new(io::ErrorKind::BrokenPipe, "welp"));
+async fn forward_read(
+    mut reader: FramedRead<OwnedReadHalf, BytesCodec>,
+    mut writer: Pin<&mut impl Sink<Bytes>>,
+) -> io::Result<FramedRead<OwnedReadHalf, BytesCodec>> {
+    while let Some(el) = reader.next().await {
+        match el {
+            Ok(chunk) => {
+                if let Err(_err) = writer.send(chunk.into()).await {
+                    // writer channel closed
+                    println!("fr write chan closed?");
+                    return Ok(reader);
+                }
+            }
+            Err(err) => {
+                // reader channel closed
+                println!("fr read chan closed?");
+                return Err(err);
+            }
         }
     }
-    Ok(())
+    Ok(reader)
 }
 
-fn forward_read(
-    reader: &mut FramedRead<OwnedReadHalf, BytesCodec>,
-) -> FramedRead<&[u8], BytesCodec> {
-    let buh: Vec<u8> = Vec::new();
-    let cap = 8192;
-    let reader2 = FramedRead::with_capacity(buh.as_slice(), BytesCodec::new(), cap);
-    reader2
-}
-
-/*
-fn forward_read(
-    reader: &mut FramedRead<OwnedReadHalf, BytesCodec>,
-) -> impl Stream<Item = Bytes> {
-    use async_stream::stream;
-
-    use futures::pin_mut;
-    use futures::stream::StreamExt;
-
-    let s = stream! {
-        while let Some(el) = reader.next().await {
-            if let Ok(chunk) = el {
-                yield Into::<Bytes>::into(chunk);
-            }
-            break;
+async fn forward_write(
+    mut reader: Pin<&mut impl Stream<Item = Bytes>>,
+    mut writer: FramedWrite<OwnedWriteHalf, BytesCodec>,
+) -> io::Result<FramedWrite<OwnedWriteHalf, BytesCodec>> {
+    while let Some(chunk) = reader.next().await {
+        if let Err(_err) = writer.send(chunk.into()).await {
+            // writer channel closed
+            println!("fw write chan closed?");
+            return Ok(writer);
         }
-    };
-    s
+    }
+    println!("fw read chan closed?");
+    Ok(writer)
 }
- */
