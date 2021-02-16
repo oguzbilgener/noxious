@@ -15,14 +15,12 @@ pub enum ToxicKind {
     Latency {
         latency: i64,
         jitter: i64,
-        buffer_size: usize,
     },
     Timeout {
         timeout: i64,
     },
     Bandwidth {
         rate: i64,
-        buffer_size: usize,
     },
     SlowClose {
         delay: i64,

@@ -94,6 +94,7 @@ pub(crate) async fn run_proxy(
             let (client_read, client_write) = client_stream.into_split();
             let (upstream_read, upstream_write) = upstream.into_split();
 
+            // TODO: the default Go io.Copy buffer size is 32K, so also use 32K buffers here to imitate Toxiproxy.
             let client_read = FramedRead::new(client_read, BytesCodec::new());
             let client_write = FramedWrite::new(client_write, BytesCodec::new());
             let upstream_read = FramedRead::new(upstream_read, BytesCodec::new());

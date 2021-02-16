@@ -125,6 +125,8 @@ impl Link {
 
             for toxic in toxics {
                 let stop = stop.clone();
+                // TODO: Get the desired channel buffer size for the toxic (in number of chunks)
+                // This is 1024 for the Latency toxic and for other toxics, the channel is unbuffered.
                 let (pipe_tx, pipe_rx) = futures_mpsc::channel::<Bytes>(1);
                 tokio::spawn(async move {
                     // TODO: obey the Stop signal
