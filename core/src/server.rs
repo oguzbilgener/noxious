@@ -64,6 +64,7 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
     });
 
     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    println!(" -- firing event remove a toxic");
 
     event_tx.send(ToxicEvent::new(
         "mongo",

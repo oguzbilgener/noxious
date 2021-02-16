@@ -87,6 +87,7 @@ pub(crate) async fn run_proxy(
         }?;
 
         if let Some((client_stream, addr)) = maybe_connection {
+            println!("~~ new client connected at {}", addr);
             // TODO: wrap this error? (could not connect to upstream)
             let upstream = TcpStream::connect(&config.upstream).await?;
 
@@ -238,6 +239,7 @@ async fn listen_toxic_events(
                     }
                     Ok(res) => res,
                 };
+                println!("got the reader and writer back");
 
                 if let Ok(updated_toxics) = build_toxic_list(old_toxics, kind.clone()) {
                     let mut updated_link = Link::new(
@@ -247,6 +249,7 @@ async fn listen_toxic_events(
                         config.clone(),
                         stop.clone(),
                     );
+                    println!("will re-establish {}", direction);
                     // TODO: stop the proxy if we cannot establish link
                     updated_link.establish(reader, writer);
 

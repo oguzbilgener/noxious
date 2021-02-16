@@ -62,6 +62,16 @@ impl Clone for Stop {
     }
 }
 
+impl std::fmt::Display for Stop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_stopped() {
+            write!(f, "stopped")
+        } else {
+            write!(f, "NOT stopped")
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Stopper {
     sender: broadcast::Sender<()>,
@@ -73,6 +83,7 @@ impl Stopper {
     }
 
     pub fn stop(self) {
+        println!("called stop...");
         let _ = self.sender.send(());
     }
 }

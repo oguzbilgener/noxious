@@ -60,64 +60,64 @@ impl Link {
         &mut self,
         mut reader: FramedRead<OwnedReadHalf, BytesCodec>,
         mut writer: FramedWrite<OwnedWriteHalf, BytesCodec>,
-    ) -> JoinHandle<Option<()>> {
-        // TODO: do we need to add one more read and write streams to both ends?
+    ) -> JoinHandle<()> {
+        // TODO: get rid of this Option in the return type
 
         let toxics = self.toxics.clone();
 
         let (disband_sender, disband_receiver) = oneshot::channel::<Ends>();
         self.disband_receiver = Some(disband_receiver);
         let direction = self.direction;
+        let mut stop = self.stop.clone();
 
         if toxics.is_empty() {
-            spawn_stoppable(self.stop.clone(), async move {
+            tokio::spawn(async move {
                 println!("{} no toxics, just connect both ends", direction);
-                let forward_res = forward(&mut reader, &mut writer).await;
-                println!("{} no toxics forward ended", direction);
-                if let Err(err) = forward_res {
-                    dbg!(err);
+                if !stop.is_stopped() {
+                    let forward_res = tokio::select! {
+                        res = forward(&mut reader, &mut writer) => res,
+                        _ = stop.recv() => Err(io::Error::new(io::ErrorKind::Other, "task stopping")),
+                    };
+                    println!("{} no toxics forward ended", direction);
+                    if let Err(err) = forward_res {
+                        dbg!(err);
+                    }
                 }
+
                 let _ = disband_sender.send((reader, writer));
             })
         } else {
             let (left_end_tx, left_end_rx) = futures_mpsc::channel::<Bytes>(1);
             let (right_end_tx, right_end_rx) = futures_mpsc::channel::<Bytes>(1);
-            let close_read_join = spawn_stoppable(self.stop.clone(), async move {
+            let stop_read = stop.clone();
+            let stop_write = stop.clone();
+            let close_read_join = tokio::spawn(async move {
                 pin!(left_end_tx);
-                forward_read(reader, left_end_tx).await
+                forward_read(reader, left_end_tx, stop_read).await
             });
-            let close_write_join = spawn_stoppable(self.stop.clone(), async move {
+            let close_write_join = tokio::spawn(async move {
                 pin!(right_end_rx);
-                forward_write(right_end_rx, writer).await
+                forward_write(right_end_rx, writer, stop_write).await
             });
 
             let stop = self.stop.clone();
-            let join_handle = spawn_stoppable(self.stop.clone(), async move {
+            let join_handle = tokio::spawn(async move {
                 let result: Result<
                     (
-                        Option<io::Result<FramedRead<OwnedReadHalf, BytesCodec>>>,
-                        Option<io::Result<FramedWrite<OwnedWriteHalf, BytesCodec>>>,
+                        io::Result<FramedRead<OwnedReadHalf, BytesCodec>>,
+                        io::Result<FramedWrite<OwnedWriteHalf, BytesCodec>>,
                     ),
                     tokio::task::JoinError,
                 > = tokio::try_join!(close_read_join, close_write_join);
                 match result {
                     Ok((read_res, write_res)) => {
-                        match (read_res, write_res) {
-                            (None, _) | (_, None) => {
-                                println!("welp...");
+                        if let Ok(reader) = read_res {
+                            if let Ok(writer) = write_res {
+                                println!("{} disband ready", direction);
+                                let _ = disband_sender.send((reader, writer));
                                 return;
                             }
-                            (Some(read_res), Some(write_res)) => {
-                                if let Ok(reader) = read_res {
-                                    if let Ok(writer) = write_res {
-                                        println!("{} disband ready", direction);
-                                        let _ = disband_sender.send((reader, writer));
-                                        return;
-                                    }
-                                }
-                            }
                         }
-
                         panic!("read or write sub task failed");
                     }
                     Err(err) => {
@@ -163,6 +163,7 @@ impl Link {
         FramedWrite<OwnedWriteHalf, BytesCodec>,
         Vec<Toxic>,
     )> {
+        println!("requesting disband, calling stopper.stop()");
         self.stopper.stop();
         let (reader, writer) = self
             .disband_receiver
@@ -256,37 +257,56 @@ async fn forward(
 async fn forward_read(
     mut reader: FramedRead<OwnedReadHalf, BytesCodec>,
     mut writer: Pin<&mut impl Sink<Bytes>>,
+    mut stop: Stop,
 ) -> io::Result<FramedRead<OwnedReadHalf, BytesCodec>> {
-    while let Some(el) = reader.next().await {
-        match el {
-            Ok(chunk) => {
-                if let Err(_err) = writer.send(chunk.into()).await {
-                    // writer channel closed
-                    println!("fr write chan closed?");
-                    return Ok(reader);
+    while !stop.is_stopped() {
+        let maybe_chunk: Option<io::Result<BytesMut>> = tokio::select! {
+            res = reader.next() => res,
+            _ = stop.recv() => None
+        };
+        if let Some(el) = maybe_chunk {
+            match el {
+                Ok(chunk) => {
+                    if let Err(_err) = writer.send(chunk.into()).await {
+                        // writer channel closed
+                        println!("fr write chan closed?");
+                        return Ok(reader);
+                    }
+                }
+                Err(err) => {
+                    // reader channel closed
+                    println!("fr read chan closed?");
+                    return Err(err);
                 }
             }
-            Err(err) => {
-                // reader channel closed
-                println!("fr read chan closed?");
-                return Err(err);
-            }
+        } else {
+            break;
         }
     }
+    println!("fr exit {}", stop);
     Ok(reader)
 }
 
 async fn forward_write(
     mut reader: Pin<&mut impl Stream<Item = Bytes>>,
     mut writer: FramedWrite<OwnedWriteHalf, BytesCodec>,
+    mut stop: Stop,
 ) -> io::Result<FramedWrite<OwnedWriteHalf, BytesCodec>> {
-    while let Some(chunk) = reader.next().await {
-        if let Err(_err) = writer.send(chunk.into()).await {
-            // writer channel closed
-            println!("fw write chan closed?");
-            return Ok(writer);
+    while !stop.is_stopped() {
+        let maybe_chunk = tokio::select! {
+            res = reader.next() => res,
+            _ = stop.recv() => None
+        };
+        if let Some(chunk) = maybe_chunk {
+            if let Err(_err) = writer.send(chunk.into()).await {
+                // writer channel closed
+                println!("fw write chan closed?");
+                return Ok(writer);
+            }
+        } else {
+            break;
         }
     }
-    println!("fw read chan closed?");
+    println!("fw read chan closed? or stopped? {}", stop);
     Ok(writer)
 }
