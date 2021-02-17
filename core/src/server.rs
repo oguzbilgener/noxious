@@ -99,14 +99,14 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
         loop {
             interval.tick().await;
             println!(" -- firing event remove a toxic");
-            // let _ = event_tx
-            //     .send(ToxicEvent::new(
-            //         "echo",
-            //         StreamDirection::Downstream,
-            //         &format!("foo{}", (x + 1)),
-            //         ToxicEventKind::ToxicRemove("foo".to_owned()),
-            //     ))
-            //     .await;
+            let _ = event_tx
+                .send(ToxicEvent::new(
+                    "echo",
+                    StreamDirection::Downstream,
+                    &format!("foo{}", (x + 1)),
+                    ToxicEventKind::ToxicRemove("foo".to_owned()),
+                ))
+                .await;
             x = (x + 1) % 3;
         }
     });

@@ -90,9 +90,10 @@ pub(crate) async fn run_proxy(
             let (upstream_read, upstream_write) = upstream.into_split();
 
             // TODO: the default Go io.Copy buffer size is 32K, so also use 32K buffers here to imitate Toxiproxy.
-            let client_read = FramedRead::new(client_read, BytesCodec::new());
+            let cap: usize = 1024;
+            let client_read = FramedRead::with_capacity(client_read, BytesCodec::new(), cap);
             let client_write = FramedWrite::new(client_write, BytesCodec::new());
-            let upstream_read = FramedRead::new(upstream_read, BytesCodec::new());
+            let upstream_read = FramedRead::with_capacity(upstream_read, BytesCodec::new(), cap);
             let upstream_write = FramedWrite::new(upstream_write, BytesCodec::new());
 
             let res = create_links(
@@ -236,13 +237,13 @@ async fn listen_toxic_events(
                 let (reader1, writer1, old_toxics) = match link_to_recreate.disband().await {
                     Err(err) => {
                         // TODO: is this really an error
-                        println!("disband recv err {:?}", err);
+                        // println!("disband recv err {:?}", err);
                         return;
                     }
                     Ok(res) => res,
                 };
                 let (reader2, writer2, old_toxics2) = link_to_keep.disband().await.expect("well");
-                println!("got them all back");
+                // println!("got them all back");
 
                 let cr_res = create_links(
                     state.clone(),

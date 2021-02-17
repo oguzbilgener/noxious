@@ -103,7 +103,7 @@ impl Link {
                     Ok((read_res, write_res)) => {
                         if let Ok(reader) = read_res {
                             if let Ok(writer) = write_res {
-                                println!("[{}] disband ready", direction);
+                                // println!("[{}] disband ready", direction);
                                 let _ = disband_sender.send((reader, writer));
                                 return;
                             }
@@ -152,10 +152,10 @@ impl Link {
     /// Cuts all the streams, stops all the ToxicRunner tasks, returns the original
     /// stream and the sink at the two ends.
     pub(super) async fn disband(self) -> io::Result<(Read, Write, Vec<Toxic>)> {
-        println!(
-            "[{}] requesting disband, calling stopper.stop()",
-            self.direction
-        );
+        // println!(
+        //     "[{}] requesting disband, calling stopper.stop()",
+        //     self.direction
+        // );
         self.stopper.stop();
         let (reader, writer) = self
             .disband_receiver
@@ -266,13 +266,13 @@ async fn forward_read(
                 Ok(chunk) => {
                     if let Err(_err) = writer.send(chunk.into()).await {
                         // writer channel closed
-                        println!("fr write chan closed?");
+                        // println!("fr write chan closed?");
                         break;
                     }
                 }
                 Err(err) => {
                     // reader channel closed
-                    println!("fr read chan closed?");
+                    // println!("fr read chan closed?");
                     return Err(err);
                 }
             }
@@ -280,7 +280,7 @@ async fn forward_read(
             break;
         }
     }
-    println!("BBBB read exit {}", stop);
+    // println!("BBBB read exit {}", stop);
     // TODO: what happens when we drop the writer stream? the chain closes?
     Ok(reader)
 }
@@ -298,13 +298,13 @@ async fn forward_write(
         if let Some(chunk) = maybe_chunk {
             if let Err(_err) = writer.send(chunk.into()).await {
                 // writer channel closed
-                println!("fw write chan closed?");
+                // println!("fw write chan closed?");
                 break;
             }
         } else {
             break;
         }
     }
-    println!("CCCC write exit {}", stop);
+    // println!("CCCC write exit {}", stop);
     Ok(writer)
 }
