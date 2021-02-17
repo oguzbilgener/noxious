@@ -5,12 +5,10 @@ use futures::{Sink, Stream};
 use std::io;
 
 pub async fn run_noop(
-    toxic: Toxic,
+    _: Toxic,
     input: impl Stream<Item = Bytes>,
     output: impl Sink<Bytes>,
 ) -> io::Result<()> {
-    println!("[{}] run noop", toxic.direction);
-    let res = input.map(Ok).forward(output).await;
-    println!("[{}] forward ended", toxic.direction);
+    let _ = input.map(Ok).forward(output).await;
     Ok(())
 }

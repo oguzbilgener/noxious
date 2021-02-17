@@ -1,5 +1,4 @@
-use std::future::Future;
-use tokio::{sync::broadcast, task::JoinHandle};
+use tokio::sync::broadcast;
 
 #[derive(Debug)]
 pub(crate) struct Stop {
@@ -83,28 +82,6 @@ impl Stopper {
     }
 
     pub fn stop(self) {
-        println!("called stop...");
         let _ = self.sender.send(());
     }
-}
-
-pub(crate) fn spawn_stoppable<T>(label: &str, mut stop: Stop, task: T) -> JoinHandle<Option<T::Output>>
-where
-    T: Future + Send + 'static,
-    T::Output: Send + 'static,
-{
-    let label = label.to_owned();
-    tokio::spawn(async move {
-        if stop.is_stopped() {
-            println!(" [{}] ss already stopped", label);
-            return None;
-        }
-        tokio::select! {
-            res = task => Some(res),
-            _ = stop.recv() => {
-                println!(" [{}] asked to stop", label);
-                None
-            },
-        }
-    })
 }

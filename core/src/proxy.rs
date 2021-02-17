@@ -1,3 +1,7 @@
+use crate::error::NotFoundError;
+use crate::link::Link;
+use crate::signal::Stop;
+use crate::toxic::{StreamDirection, Toxic};
 use futures::{stream, StreamExt};
 use std::collections::HashMap;
 use std::io;
@@ -7,13 +11,7 @@ use std::sync::{Arc, Mutex};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
-
-use crate::error::NotFoundError;
-use crate::link::Link;
-use crate::signal::Stop;
-use crate::toxic::{StreamDirection, Toxic};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProxyConfig {
@@ -182,7 +180,10 @@ fn create_links(
             return;
         }
         links_stopper.stop();
-        println!("\n\nremoving {} from clients list as we disconnected", &addr);
+        println!(
+            "\n\nremoving {} from clients list as we disconnected",
+            &addr
+        );
         let mut state = state.lock().expect("ProxyState poisoned");
         state.clients.remove(&addr);
     });
@@ -225,8 +226,6 @@ async fn listen_toxic_events(
                 let mut current_state = state.lock().expect("ProxyState poisoned for upstream {}");
                 mem::replace(&mut current_state.clients, HashMap::new())
             };
-            let direction = event.direction;
-            let kind = event.kind.clone();
 
             let mut elements = stream::iter(old_map);
             while let Some((addr, links)) = elements.next().await {
@@ -234,7 +233,7 @@ async fn listen_toxic_events(
                     StreamDirection::Upstream => (links.upstream, links.client),
                     StreamDirection::Downstream => (links.client, links.upstream),
                 };
-                let (reader, writer, old_toxics) = match link_to_recreate.disband().await {
+                let (reader1, writer1, old_toxics) = match link_to_recreate.disband().await {
                     Err(err) => {
                         // TODO: is this really an error
                         println!("disband recv err {:?}", err);
@@ -242,52 +241,48 @@ async fn listen_toxic_events(
                     }
                     Ok(res) => res,
                 };
-                println!("got the reader and writer back");
+                let (reader2, writer2, old_toxics2) = link_to_keep.disband().await.expect("well");
+                println!("got them all back");
 
-                if let Ok(updated_toxics) = build_toxic_list(old_toxics, kind.clone()) {
-                    let mut updated_link = Link::new(
-                        addr,
-                        direction,
-                        updated_toxics,
-                        config.clone(),
-                        stop.clone(),
-                    );
-                    println!("will re-establish {}", direction);
-                    // TODO: stop the proxy if we cannot establish link
-                    updated_link.establish(reader, writer);
-
-                    let links = if direction == StreamDirection::Upstream {
-                        Links {
-                            upstream: updated_link,
-                            client: link_to_keep,
-                        }
-                    } else {
-                        Links {
-                            upstream: link_to_keep,
-                            client: updated_link,
-                        }
-                    };
-
-                    println!("Inserting new links");
-                    state
-                        .lock()
-                        .expect("ProxyState poisoned")
-                        .clients
-                        .insert(addr, links);
-                } else {
-                    // TODO: trace
-                    println!(
-                        "State error: Attempted to update or remove nonexistent toxic, for {} for address {}",
-                        direction,
-                        addr
-                    );
-                }
+                let cr_res = create_links(
+                    state.clone(),
+                    addr,
+                    &config,
+                    &mut stop.clone(),
+                    Toxics {
+                        downstream: old_toxics,
+                        upstream: old_toxics2,
+                    },
+                    reader1,
+                    writer1,
+                    reader2,
+                    writer2,
+                );
+                println!("called create {:?}", cr_res);
             }
+        } else {
+            break;
         }
     }
 }
 
-fn build_toxic_list(
+impl ToxicEvent {
+    pub fn new(
+        proxy_name: &str,
+        direction: StreamDirection,
+        toxic_name: &str,
+        kind: ToxicEventKind,
+    ) -> Self {
+        ToxicEvent {
+            proxy_name: proxy_name.to_owned(),
+            direction,
+            toxic_name: toxic_name.to_owned(),
+            kind,
+        }
+    }
+}
+
+fn update_toxic_list(
     mut toxics: Vec<Toxic>,
     event_kind: ToxicEventKind,
 ) -> Result<Vec<Toxic>, NotFoundError> {
@@ -311,20 +306,4 @@ fn build_toxic_list(
         }
     }
     Ok(toxics)
-}
-
-impl ToxicEvent {
-    pub fn new(
-        proxy_name: &str,
-        direction: StreamDirection,
-        toxic_name: &str,
-        kind: ToxicEventKind,
-    ) -> Self {
-        ToxicEvent {
-            proxy_name: proxy_name.to_owned(),
-            direction,
-            toxic_name: toxic_name.to_owned(),
-            kind,
-        }
-    }
 }

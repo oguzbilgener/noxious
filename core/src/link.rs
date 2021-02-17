@@ -1,4 +1,4 @@
-use crate::signal::{spawn_stoppable, Stop, Stopper};
+use crate::signal::{Stop, Stopper};
 use crate::toxic::{StreamDirection, Toxic};
 use crate::toxics;
 use crate::{proxy::ProxyConfig, toxic::ToxicKind};
@@ -57,8 +57,6 @@ impl Link {
     }
 
     pub(super) fn establish(&mut self, mut reader: Read, mut writer: Write) -> JoinHandle<()> {
-        // TODO: get rid of this Option in the return type
-
         let toxics = self.toxics.clone();
 
         let (disband_sender, disband_receiver) = oneshot::channel::<Ends>();
@@ -125,14 +123,21 @@ impl Link {
                 // TODO: Get the desired channel buffer size for the toxic (in number of chunks)
                 // This is 1024 for the Latency toxic and for other toxics, the channel is unbuffered.
                 let (pipe_tx, pipe_rx) = futures_mpsc::channel::<Bytes>(1);
-                spawn_stoppable(&format!("toxic {}", &toxic.name), stop.clone(), async move {
+                let mut stop = stop.clone();
+                tokio::spawn(async move {
                     // TODO: obey the Stop signal
                     let reader = prev_pipe_read_rx;
                     pin!(reader);
                     pin!(pipe_tx);
-                    let res = ToxicRunner::new(toxic).run(reader, pipe_tx, stop).await;
-                    if let Err(err) = res {
-                        dbg!(err);
+                    let runner = ToxicRunner::new(toxic);
+                    let maybe_res = tokio::select! {
+                        res = runner.run(reader, pipe_tx) => Some(res),
+                        _ = stop.recv() => None,
+                    };
+                    if let Some(res) = maybe_res {
+                        if let Err(err) = res {
+                            dbg!(err);
+                        }
                     }
                 });
                 prev_pipe_read_rx = pipe_rx;
@@ -186,7 +191,6 @@ impl ToxicRunner {
         &self,
         input: impl Stream<Item = Bytes>,
         output: impl Sink<Bytes>,
-        stop: Stop,
     ) -> io::Result<()> {
         match self.toxic.kind {
             // TODO: avoid cloning toxic if possible
