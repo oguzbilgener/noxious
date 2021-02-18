@@ -13,7 +13,7 @@ struct Args {
     /// json file containing proxies to create on startup
     config_file_path: Option<String>,
     /// Seed for randomizing toxics with
-    seed: i64,
+    seed: Option<u64>,
 }
 
 impl Default for Args {
@@ -22,7 +22,7 @@ impl Default for Args {
             host: "127.0.0.1",
             port: "8474",
             config_file_path: None,
-            seed: Utc::now().timestamp_nanos(),
+            seed: None,
         }
     }
 }
@@ -39,7 +39,9 @@ async fn main() {
     // TODO: parse the json file, deserialize all toxics, start the core server
 
     // TODO: harmonious shutdown handling
-    noxious::run(Vec::new(), signal::ctrl_c()).await.expect("uh?");
+    noxious::run(Vec::new(), signal::ctrl_c())
+        .await
+        .expect("uh?");
 
     api::run_server(listener, signal::ctrl_c())
         .await

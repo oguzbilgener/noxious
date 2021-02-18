@@ -5,7 +5,6 @@ use futures::{Sink, Stream};
 use std::io;
 
 pub async fn run_noop(
-    _: Toxic,
     input: impl Stream<Item = Bytes>,
     output: impl Sink<Bytes>,
 ) -> io::Result<()> {

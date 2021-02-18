@@ -3,9 +3,9 @@ use std::io;
 use tokio::sync::mpsc;
 
 use crate::{
-    proxy::{run_proxy, ProxyConfig, ToxicEvent, ToxicEventKind, Toxics},
+    proxy::{run_proxy, ProxyConfig, Toxics},
     signal::Stop,
-    toxic::{StreamDirection, Toxic, ToxicKind},
+    toxic::{StreamDirection, Toxic, ToxicEvent, ToxicEventKind, ToxicKind},
 };
 
 // TODO: maybe make initial_toxics a vec of serialized toxics?
@@ -30,7 +30,10 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
     };
 
     let toxic_two = Toxic {
-        kind: ToxicKind::Noop,
+        kind: ToxicKind::Latency {
+            jitter: 0,
+            latency: 500,
+        },
         name: "foo2".to_owned(),
         toxicity: 1.0,
         direction: StreamDirection::Downstream,
@@ -50,13 +53,9 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
         direction: StreamDirection::Upstream,
     };
 
-    // let initial_toxics = Toxics {
-    //     upstream: vec![toxic_up_one],
-    //     downstream: vec![toxic_one, toxic_two, toxic_three],
-    // };
     let initial_toxics = Toxics {
-        upstream: Vec::new(),
-        downstream: Vec::new(),
+        upstream: vec![toxic_up_one],
+        downstream: vec![toxic_one, toxic_two, toxic_three],
     };
 
     let s2 = stop.clone();
@@ -75,6 +74,7 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
                 upstream: Vec::new(),
                 downstream: Vec::new(),
             },
+            None,
             s2,
         )
         .await
@@ -86,7 +86,7 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
     });
 
     tokio::spawn(async move {
-        if let Err(err) = run_proxy(proxy_config, event_rx, initial_toxics, stop).await {
+        if let Err(err) = run_proxy(proxy_config, event_rx, initial_toxics, None, stop).await {
             println!("run proxy err");
             dbg!(err);
         }
@@ -94,21 +94,16 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
     });
 
     tokio::spawn(async move {
-        let mut x = 0;
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
-        loop {
-            interval.tick().await;
-            println!(" -- firing event remove a toxic");
-            let _ = event_tx
-                .send(ToxicEvent::new(
-                    "echo",
-                    StreamDirection::Downstream,
-                    &format!("foo{}", (x + 1)),
-                    ToxicEventKind::ToxicRemove("foo".to_owned()),
-                ))
-                .await;
-            x = (x + 1) % 3;
-        }
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        println!(" -- firing event remove a toxic");
+        let _ = event_tx
+            .send(ToxicEvent::new(
+                "mongo",
+                StreamDirection::Downstream,
+                "foo1",
+                ToxicEventKind::ToxicRemove("foo1".to_owned()),
+            ))
+            .await;
     });
 
     shutdown.await;

@@ -1,3 +1,9 @@
 [workspace]
 
 members = ["core", "server", "client", "cli"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

@@ -19,7 +19,7 @@ impl Stop {
         (stop, stopper)
     }
 
-    pub(crate) fn is_stopped(&self) -> bool {
+    pub(crate) fn stop_received(&self) -> bool {
         self.stopped
     }
 
@@ -63,7 +63,7 @@ impl Clone for Stop {
 
 impl std::fmt::Display for Stop {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_stopped() {
+        if self.stop_received() {
             write!(f, "stopped")
         } else {
             write!(f, "NOT stopped")

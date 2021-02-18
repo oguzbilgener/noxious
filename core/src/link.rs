@@ -68,7 +68,7 @@ impl Link {
         if toxics.is_empty() {
             tokio::spawn(async move {
                 println!("[{}] no toxics, just connect both ends", direction);
-                if !stop.is_stopped() {
+                if !stop.stop_received() {
                     let forward_res = tokio::select! {
                         res = forward(&mut reader, &mut writer, stop.clone()) => res,
                         _ = stop.recv() => Err(io::Error::new(io::ErrorKind::Other, "task stopping")),
@@ -151,7 +151,7 @@ impl Link {
 
     /// Cuts all the streams, stops all the ToxicRunner tasks, returns the original
     /// stream and the sink at the two ends.
-    pub(super) async fn disband(self) -> io::Result<(Read, Write, Vec<Toxic>)> {
+    pub(super) async fn disband(self) -> io::Result<(Read, Write)> {
         // println!(
         //     "[{}] requesting disband, calling stopper.stop()",
         //     self.direction
@@ -163,7 +163,7 @@ impl Link {
             .await
             .map_err(|_| io::Error::new(io::ErrorKind::Other, "already closed?"))?;
 
-        Ok((reader, writer, self.toxics))
+        Ok((reader, writer))
     }
 }
 
@@ -194,9 +194,9 @@ impl ToxicRunner {
     ) -> io::Result<()> {
         match self.toxic.kind {
             // TODO: avoid cloning toxic if possible
-            ToxicKind::Noop => toxics::run_noop(self.toxic.clone(), input, output).await,
+            ToxicKind::Noop => toxics::run_noop(input, output).await,
             ToxicKind::Latency { latency, jitter } => {
-                todo!()
+                toxics::run_latency(input, output, latency, jitter, None).await
             }
             ToxicKind::Timeout { timeout } => {
                 todo!()
@@ -222,7 +222,7 @@ impl ToxicRunner {
 }
 
 async fn forward(reader: &mut Read, writer: &mut Write, mut stop: Stop) -> io::Result<()> {
-    while !stop.is_stopped() {
+    while !stop.stop_received() {
         let maybe_res: Option<io::Result<BytesMut>> = tokio::select! {
             res = reader.next() => res,
             _ = stop.recv() => None
@@ -256,7 +256,7 @@ async fn forward_read(
     mut writer: Pin<&mut impl Sink<Bytes>>,
     mut stop: Stop,
 ) -> io::Result<Read> {
-    while !stop.is_stopped() {
+    while !stop.stop_received() {
         let maybe_res: Option<io::Result<BytesMut>> = tokio::select! {
             res = reader.next() => res,
             _ = stop.recv() => None
@@ -290,7 +290,7 @@ async fn forward_write(
     mut writer: Write,
     mut stop: Stop,
 ) -> io::Result<Write> {
-    while !stop.is_stopped() {
+    while !stop.stop_received() {
         let maybe_chunk = tokio::select! {
             res = reader.next() => res,
             _ = stop.recv() => None
