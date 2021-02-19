@@ -14,7 +14,7 @@ pub(crate) type Write = FramedWrite<OwnedWriteHalf, BytesCodec>;
 pub(crate) async fn forward(
     reader: &mut Read,
     writer: &mut Write,
-    mut stop: Stop,
+    stop: &mut Stop,
 ) -> io::Result<()> {
     while !stop.stop_received() {
         let maybe_res: Option<io::Result<BytesMut>> = tokio::select! {
@@ -47,7 +47,7 @@ pub(crate) async fn forward(
 pub(crate) async fn forward_read(
     mut reader: Read,
     mut writer: Pin<&mut impl Sink<Bytes>>,
-    mut stop: Stop,
+    stop: &mut Stop,
 ) -> io::Result<Read> {
     while !stop.stop_received() {
         let maybe_res: Option<io::Result<BytesMut>> = tokio::select! {
@@ -70,6 +70,7 @@ pub(crate) async fn forward_read(
                 }
             }
         } else {
+            println!("well! {}", stop);
             break;
         }
     }
@@ -80,7 +81,7 @@ pub(crate) async fn forward_read(
 pub(crate) async fn forward_write(
     mut reader: Pin<&mut impl Stream<Item = Bytes>>,
     mut writer: Write,
-    mut stop: Stop,
+    stop: &mut Stop,
 ) -> io::Result<Write> {
     while !stop.stop_received() {
         let maybe_chunk = tokio::select! {

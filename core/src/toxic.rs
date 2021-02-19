@@ -97,6 +97,15 @@ impl ToxicEvent {
     }
 }
 
+impl ToxicKind {
+    pub(crate) fn needs_closer(&self) -> bool {
+        match self {
+            ToxicKind::SlowClose { .. } | ToxicKind::LimitData { .. } => true,
+            _ => false,
+        }
+    }
+}
+
 pub(super) fn update_toxic_list_in_place(
     toxics: &mut Vec<Toxic>,
     event_kind: ToxicEventKind,

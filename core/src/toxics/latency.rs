@@ -21,29 +21,36 @@ pub async fn run_latency(
     latency: u64,
     jitter: u64,
 ) -> io::Result<()> {
-    let range = Uniform::from(0..(jitter * 2));
-    let rng = StdRng::from_entropy();
-    let jitter_stream = futures::stream::iter(rng.sample_iter(&range));
+    if jitter == 0 {
+        let _ = input
+            .then(|chunk| async move {
+                tokio::time::sleep(Duration::from_millis(latency)).await;
+                chunk
+            })
+            .map(Ok)
+            .forward(output)
+            .await;
+    } else {
+        let range = Uniform::from(0..(jitter * 2));
+        let rng = StdRng::from_entropy();
+        let jitter_stream = futures::stream::iter(rng.sample_iter(&range));
+        let _ = input
+            .zip(jitter_stream)
+            .then(|(chunk, add)| async move {
+                let delay = latency + add - jitter;
+                tokio::time::sleep(Duration::from_millis(delay)).await;
+                chunk
+            })
+            .map(Ok)
+            .forward(output)
+            .await;
+    }
 
     // let mut rng = if let Some(seed) = rand_seed {
     //     StdRng::seed_from_u64(seed)
     // } else {
     //     StdRng::from_entropy()
     // };
-    let _ = input
-        .zip(jitter_stream)
-        .then(|(chunk, add)| async move {
-            let mut delay = latency;
-            println!("delay {} add {} jitter {}", delay, add, jitter);
-            if jitter > 0 {
-                delay = latency + add - jitter;
-            }
-            println!("Delaying by {}", delay);
-            tokio::time::sleep(Duration::from_millis(delay)).await;
-            chunk
-        })
-        .map(Ok)
-        .forward(output)
-        .await;
+
     Ok(())
 }

@@ -165,15 +165,9 @@ fn create_links(
             up = upstream_handle => up,
             down = downstream_handle => down
         };
-        println!(
-            "joined upstream and downstream {:?} {}",
-            some_handle, links_stop
-        );
+        println!("one of the links stopped {:?} {}", some_handle, links_stop);
         links_stopper.stop();
-        println!(
-            "\n\nremoving {} from clients list as we disconnected",
-            &addr
-        );
+        println!("removing {} from clients list as we disconnected", &addr);
         let mut state = state.lock().expect("ProxyState poisoned");
         state.clients.remove(&addr);
         println!("clients size = {}", state.clients.len());

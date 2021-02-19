@@ -32,7 +32,7 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
     let toxic_two = Toxic {
         kind: ToxicKind::Latency {
             jitter: 0,
-            latency: 500,
+            latency: 10,
         },
         name: "foo2".to_owned(),
         toxicity: 1.0,
@@ -71,21 +71,37 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
             proxy_config,
             event_rx,
             Toxics {
-                upstream: vec![/*Toxic {
-                    kind: ToxicKind::Timeout { timeout: 5000 },
-                    name: "timeout".to_owned(),
-                    toxicity: 1.0,
-                    direction: StreamDirection::Upstream,
-                }*/ Toxic {
-                    kind:ToxicKind::Latency {
-                        latency: 500,
-                        jitter: 450,
+                upstream: vec![
+                    /*Toxic {
+                        kind: ToxicKind::Timeout { timeout: 5000 },
+                        name: "timeout".to_owned(),
+                        toxicity: 1.0,
+                        direction: StreamDirection::Upstream,
+                    }*/
+                    Toxic {
+                        kind: ToxicKind::Latency {
+                            latency: 500,
+                            jitter: 450,
+                        },
+                        name: "lat!".to_owned(),
+                        toxicity: 1.0,
+                        direction: StreamDirection::Upstream,
                     },
-                    name: "lat!".to_owned(),
-                    toxicity: 1.0,
-                    direction: StreamDirection::Upstream,
-                }],
-                downstream: Vec::new(),
+                    Toxic {
+                        kind: ToxicKind::SlowClose { delay: 20000 },
+                        name: "sc".to_owned(),
+                        toxicity: 1.0,
+                        direction: StreamDirection::Upstream,
+                    },
+                ],
+                downstream: vec![
+                    Toxic {
+                        kind: ToxicKind::SlowClose { delay: 5000 },
+                        name: "sc2".to_owned(),
+                        toxicity: 1.0,
+                        direction: StreamDirection::Upstream,
+                    },
+                ],
             },
             None,
             s2,

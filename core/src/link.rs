@@ -66,10 +66,7 @@ impl Link {
             tokio::spawn(async move {
                 println!("[{}] no toxics, just connect both ends", direction);
                 if !stop.stop_received() {
-                    let forward_res = tokio::select! {
-                        res = forward(&mut reader, &mut writer, stop.clone()) => res,
-                        _ = stop.recv() => Err(io::Error::new(io::ErrorKind::Other, "task stopping")),
-                    };
+                    let forward_res = forward(&mut reader, &mut writer, &mut stop).await;
                     println!("[{}] no toxics forward ended", direction);
                     if let Err(err) = forward_res {
                         dbg!(err);
@@ -81,18 +78,35 @@ impl Link {
         } else {
             let (left_end_tx, left_end_rx) = futures_mpsc::channel::<Bytes>(1);
             let (right_end_tx, right_end_rx) = futures_mpsc::channel::<Bytes>(1);
-            let (stop_read, read_stopper) = stop.fork();
-            let (stop_write, write_stopper) = stop.fork();
+            let (mut stop_read, read_stopper) = stop.fork();
+            let (mut stop_write, write_stopper) = stop.fork();
+            let should_wait_for_manual_close = toxics.iter().any(|toxic| toxic.kind.needs_closer());
+            println!(
+                "[{}] should wait for manual close? {}",
+                direction, should_wait_for_manual_close
+            );
             let close_read_join = tokio::spawn(async move {
                 pin!(left_end_tx);
-                let res = forward_read(reader, left_end_tx, stop_read).await;
-                write_stopper.stop();
+                let res = forward_read(reader, left_end_tx, &mut stop_read).await;
+                println!("[{}] read task ended, {}", direction, &stop_read);
+                // Speed up closing the underlying connection by closing the other channel,
+                // unless we should wait for a toxic to yield explicitly.
+                if !should_wait_for_manual_close || stop_read.stop_received() {
+                    println!("[{}] stop the write immediately", direction);
+                    write_stopper.stop();
+                }
                 res
             });
             let close_write_join = tokio::spawn(async move {
                 pin!(right_end_rx);
-                let res = forward_write(right_end_rx, writer, stop_write).await;
-                read_stopper.stop();
+                let res = forward_write(right_end_rx, writer, &mut stop_write).await;
+                println!("[{}] write task ended, {}", direction, &stop_write);
+                // Speed up closing the underlying connection by closing the other channel,
+                // unless we should wait for a toxic to yield explicitly.
+                if !should_wait_for_manual_close || stop_write.stop_received() {
+                    println!("[{}] stop the read immediately", direction);
+                    read_stopper.stop();
+                }
                 res
             });
 
@@ -105,7 +119,7 @@ impl Link {
                     Ok((read_res, write_res)) => {
                         if let Ok(reader) = read_res {
                             if let Ok(writer) = write_res {
-                                // println!("[{}] disband ready", direction);
+                                println!("[{}] disband ready", direction);
                                 let _ = disband_sender.send((reader, writer));
                                 return;
                             }
@@ -128,12 +142,17 @@ impl Link {
                 let mut stop = stop.clone();
                 tokio::spawn(async move {
                     let reader = prev_pipe_read_rx;
-                    pin!(reader);
-                    pin!(pipe_tx);
-                    let runner = ToxicRunner::new(toxic);
+                    let mut runner = ToxicRunner::new(toxic);
+
                     let maybe_res = tokio::select! {
-                        res = runner.run(reader, pipe_tx) => Some(res),
-                        _ = stop.recv() => None,
+                        res = runner.run(reader, pipe_tx) => {
+                            println!("pipe closed");
+                            Some(res)
+                        },
+                        _ = stop.recv() => {
+                            println!("stop recv'd");
+                            None
+                        }
                     };
                     if let Some(res) = maybe_res {
                         if let Err(err) = res {
@@ -153,10 +172,7 @@ impl Link {
     /// Cuts all the streams, stops all the ToxicRunner tasks, returns the original
     /// stream and the sink at the two ends.
     pub(super) async fn disband(self) -> io::Result<(Read, Write)> {
-        // println!(
-        //     "[{}] requesting disband, calling stopper.stop()",
-        //     self.direction
-        // );
+        println!("[{}] disband, calling stopper.stop!", self.direction);
         self.stopper.stop();
         let (reader, writer) = self
             .disband_receiver
@@ -181,20 +197,20 @@ pub(crate) struct ToxicRunner {
 
 impl ToxicRunner {
     pub fn new(toxic: Toxic) -> Self {
+
         ToxicRunner {
-            // TODO: figure out the interrupt logic, i.e. when the Link or its streams is dropped,
-            // cancel the runner tasks
             toxic,
         }
     }
 
     pub async fn run(
-        &self,
+        &mut self,
         input: impl Stream<Item = Bytes>,
         output: impl Sink<Bytes>,
     ) -> io::Result<()> {
+        pin!(input);
+        pin!(output);
         match self.toxic.kind {
-            // TODO: avoid cloning toxic if possible
             ToxicKind::Noop => toxics::run_noop(input, output).await,
             ToxicKind::Latency { latency, jitter } => {
                 toxics::run_latency(input, output, latency, jitter).await
@@ -202,7 +218,7 @@ impl ToxicRunner {
             ToxicKind::Timeout { timeout } => toxics::run_timeout(input, output, timeout).await,
             ToxicKind::Bandwidth { rate } => toxics::run_bandwidth(input, output, rate).await,
             ToxicKind::SlowClose { delay } => {
-                todo!()
+                toxics::run_slow_close(input, output, delay).await
             }
             ToxicKind::Slicer {
                 average_size,
