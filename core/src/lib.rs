@@ -31,6 +31,8 @@ mod proxy;
 mod link;
 mod signal;
 mod error;
+mod random;
+mod stream;
 
 pub use server::run;
 

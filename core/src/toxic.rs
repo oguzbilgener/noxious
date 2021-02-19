@@ -19,21 +19,21 @@ pub enum ToxicKind {
         jitter: u64,
     },
     Timeout {
-        timeout: i64,
+        timeout: u64,
     },
     Bandwidth {
-        rate: i64,
+        rate: u64,
     },
     SlowClose {
-        delay: i64,
+        delay: u64,
     },
     Slicer {
-        average_size: i64,
-        size_variation: i64,
-        delay: i64,
+        average_size: u64,
+        size_variation: u64,
+        delay: u64,
     },
     LimitData {
-        bytes: i64,
+        bytes: u64,
     },
 }
 

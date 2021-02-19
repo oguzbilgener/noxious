@@ -2,6 +2,7 @@ use crate::signal::Stop;
 use crate::toxic::{update_toxic_list_in_place, StreamDirection, Toxic, ToxicEvent};
 use crate::{error::NotFoundError, link::Link};
 use futures::{stream, StreamExt};
+use rand::rngs::StdRng;
 use std::collections::HashMap;
 use std::io;
 use std::mem;
@@ -11,7 +12,6 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
-use rand::rngs::StdRng;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProxyConfig {
@@ -21,7 +21,6 @@ pub(crate) struct ProxyConfig {
     pub listen: String,
     /// The host name and the port the proxy connects to, like 127.0.0:5432
     pub upstream: String,
-
 }
 
 #[derive(Debug)]
@@ -166,11 +165,10 @@ fn create_links(
             up = upstream_handle => up,
             down = downstream_handle => down
         };
-        println!("joined upstream and downstream {:?}", some_handle);
-        // if stop.stop_received() {
-        //     println!("already stopped, so returning");
-        //     return;
-        // }
+        println!(
+            "joined upstream and downstream {:?} {}",
+            some_handle, links_stop
+        );
         links_stopper.stop();
         println!(
             "\n\nremoving {} from clients list as we disconnected",
@@ -178,6 +176,7 @@ fn create_links(
         );
         let mut state = state.lock().expect("ProxyState poisoned");
         state.clients.remove(&addr);
+        println!("clients size = {}", state.clients.len());
     });
 
     current_state.clients.insert(

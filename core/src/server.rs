@@ -71,7 +71,20 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
             proxy_config,
             event_rx,
             Toxics {
-                upstream: Vec::new(),
+                upstream: vec![/*Toxic {
+                    kind: ToxicKind::Timeout { timeout: 5000 },
+                    name: "timeout".to_owned(),
+                    toxicity: 1.0,
+                    direction: StreamDirection::Upstream,
+                }*/ Toxic {
+                    kind:ToxicKind::Latency {
+                        latency: 500,
+                        jitter: 450,
+                    },
+                    name: "lat!".to_owned(),
+                    toxicity: 1.0,
+                    direction: StreamDirection::Upstream,
+                }],
                 downstream: Vec::new(),
             },
             None,
