@@ -79,7 +79,7 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
                         direction: StreamDirection::Upstream,
                     }*/
                     Toxic {
-                        kind: ToxicKind::SlowClose { delay: 12000 },
+                        kind: ToxicKind::SlowClose { delay: 8000 },
                         name: "scRe".to_owned(),
                         toxicity: 1.0,
                         direction: StreamDirection::Upstream,

@@ -22,13 +22,11 @@ use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 #[derive(Debug)]
 pub(crate) struct Link {
     config: ProxyConfig,
-    toxics: Vec<Toxic>,
     upstream_addr: SocketAddr,
     direction: StreamDirection,
     stop: Stop,
     stopper: Stopper,
     disband_receiver: Option<oneshot::Receiver<Ends>>,
-    // TODO: add additional left and right streams
 }
 
 type Ends = (
@@ -40,14 +38,12 @@ impl Link {
     pub(crate) fn new(
         upstream_addr: SocketAddr,
         direction: StreamDirection,
-        toxics: Vec<Toxic>,
         config: ProxyConfig,
         stop: Stop,
     ) -> Self {
         let (stop, stopper) = stop.fork();
         let link = Link {
             config,
-            toxics,
             upstream_addr,
             direction,
             stop,
@@ -59,177 +55,168 @@ impl Link {
 
     pub(super) fn establish(
         &mut self,
-        mut reader: Read,
-        mut writer: Write,
+        reader: Read,
+        writer: Write,
+        toxics: Vec<Toxic>,
         toxic_state_holder: Option<Arc<ToxicStateHolder>>,
     ) -> JoinHandle<()> {
-        let toxics = self.toxics.clone();
-
         let (disband_sender, disband_receiver) = oneshot::channel::<Ends>();
         self.disband_receiver = Some(disband_receiver);
-        let direction = self.direction;
-        println!("[{}] establish", direction);
-        let mut stop = self.stop.clone();
 
         if toxics.is_empty() {
+            self.forward_direct(reader, writer, disband_sender)
+        } else {
+            self.setup_toxics(reader, writer, toxics, disband_sender, toxic_state_holder)
+        }
+    }
+
+    fn forward_direct(
+        &mut self,
+        mut reader: Read,
+        mut writer: Write,
+        disband_sender: oneshot::Sender<Ends>,
+    ) -> JoinHandle<()> {
+        let mut stop = self.stop.clone();
+        tokio::spawn(async move {
+            if !stop.stop_received() {
+                let forward_res = forward(&mut reader, &mut writer, &mut stop).await;
+                if let Err(err) = forward_res {
+                    // TODO: maybe log this error in case it's a specific I/O error.
+                }
+            }
+            let _ = disband_sender.send((reader, writer));
+        })
+    }
+
+    fn setup_toxics(
+        &mut self,
+        reader: Read,
+        writer: Write,
+        toxics: Vec<Toxic>,
+        disband_sender: oneshot::Sender<Ends>,
+        toxic_state_holder: Option<Arc<ToxicStateHolder>>,
+    ) -> JoinHandle<()> {
+        let direction = self.direction;
+        let stop = self.stop.clone();
+        let (left_end_tx, left_end_rx) = futures_mpsc::channel::<Bytes>(1);
+        let (right_end_tx, right_end_rx) = futures_mpsc::channel::<Bytes>(1);
+        let (mut stop_read, read_stopper) = stop.fork();
+        let (mut stop_write, write_stopper) = stop.fork();
+        let mut toxic_runners: Vec<ToxicRunner> =
+            toxics.into_iter().map(ToxicRunner::new).collect();
+        let (force_stop_toxics, toxic_force_stopper) = Stop::new();
+
+        let close_signals: Vec<Close> = toxic_runners
+            .iter_mut()
+            .filter_map(|runner| {
+                if runner.toxic_kind().has_close_logic() {
+                    let (close, closer) = Close::new();
+                    runner.set_closer(closer);
+                    runner.set_force_stop(force_stop_toxics.clone());
+                    Some(close)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let wait_for_manual_close: Option<Close> = if !close_signals.is_empty() {
+            let (close, closer) = Close::new();
             tokio::spawn(async move {
-                println!("[{}] no toxics, just connect both ends", direction);
-                if !stop.stop_received() {
-                    let forward_res = forward(&mut reader, &mut writer, &mut stop).await;
-                    println!("[{}] no toxics forward ended", direction);
-                    if let Err(err) = forward_res {
-                        dbg!(err);
+                for close in close_signals {
+                    if let Err(_) = close.recv().await {
+                        break;
                     }
                 }
-
-                let _ = disband_sender.send((reader, writer));
-            })
+                let _ = closer.close();
+            });
+            Some(close)
         } else {
-            let (left_end_tx, left_end_rx) = futures_mpsc::channel::<Bytes>(1);
-            let (right_end_tx, right_end_rx) = futures_mpsc::channel::<Bytes>(1);
-            let (mut stop_read, read_stopper) = stop.fork();
-            let (mut stop_write, write_stopper) = stop.fork();
-            let mut toxic_runners: Vec<ToxicRunner> =
-                toxics.into_iter().map(ToxicRunner::new).collect();
-            let read_stopper2 = read_stopper.clone();
-            let write_stopper2 = write_stopper.clone();
+            None
+        };
+        let wait_for_manual_close_write = wait_for_manual_close.clone();
+        let close_read_join = tokio::spawn(async move {
+            pin!(left_end_tx);
+            let res = forward_read(reader, left_end_tx, &mut stop_read).await;
+            // Speed up closing the underlying connection by closing the other channel,
+            // unless we should wait for a toxic to yield explicitly.
+            if wait_for_manual_close.is_none() || stop_read.stop_received() {
+                write_stopper.stop();
+            } else if let Some(close) = wait_for_manual_close {
+                let _ = close.recv().await;
+                write_stopper.stop();
+            }
+            res
+        });
+        let close_write_join = tokio::spawn(async move {
+            pin!(right_end_rx);
+            let res = forward_write(right_end_rx, writer, &mut stop_write).await;
+            // Speed up closing the underlying connection by closing the other channel,
+            // unless we should wait for a toxic to yield explicitly.
+            if wait_for_manual_close_write.is_none() || stop_write.stop_received() {
+                read_stopper.stop();
+            } else if let Some(close) = wait_for_manual_close_write {
+                toxic_force_stopper.stop();
+                let _ = close.recv().await;
+                read_stopper.stop();
+            }
+            res
+        });
 
-            let close_signals: Vec<Close> = toxic_runners
-                .iter_mut()
-                .filter_map(|runner| {
-                    if runner.toxic_kind().has_close_logic() {
-                        let (close, closer) = Close::new();
-                        runner.set_closer(closer);
-                        runner.set_force_stop(stop_write.clone());
-                        Some(close)
-                    } else {
+        let stop = self.stop.clone();
+        let join_handle = tokio::spawn(async move {
+            let result: Result<(io::Result<Read>, io::Result<Write>), tokio::task::JoinError> =
+                tokio::try_join!(close_read_join, close_write_join);
+            match result {
+                Ok((read_res, write_res)) => {
+                    if let Ok(reader) = read_res {
+                        if let Ok(writer) = write_res {
+                            let _ = disband_sender.send((reader, writer));
+                            return;
+                        }
+                    }
+                    panic!("read or write sub task failed");
+                }
+                Err(err) => {
+                    panic!("read or write sub task failed {:?}", err);
+                }
+            }
+        });
+
+        let mut prev_pipe_read_rx = left_end_rx;
+
+        for mut runner in toxic_runners {
+            let toxic_name = runner.toxic_name();
+            let toxic_state = toxic_state_holder
+                .clone()
+                .and_then(|holder| holder.get_state_for_toxic(toxic_name));
+            let stop = stop.clone();
+            // Get the desired channel buffer capacity for the toxic (in number of chunks)
+            // This is 1024 for the Latency toxic and 1 for others, similar
+            // to the original Toxiproxy implementation.
+            let (pipe_tx, pipe_rx) =
+                futures_mpsc::channel::<Bytes>(runner.toxic_kind().chunk_buffer_capacity());
+            let mut stop = stop.clone();
+            tokio::spawn(async move {
+                let maybe_res = tokio::select! {
+                    res = runner.run(prev_pipe_read_rx, pipe_tx, toxic_state) => {
+                        Some(res)
+                    },
+                    _ = stop.recv() => {
                         None
                     }
-                })
-                .collect();
-            let wait_for_manual_close: Option<Close> = if !close_signals.is_empty() {
-                let (close, closer) = Close::new();
-                tokio::spawn(async move {
-                    println!("||| waiting for {} close signals", close_signals.len());
-                    for close in close_signals {
-                        if let Err(_) = close.recv().await {
-                            println!("-------------------- got ERRRRR");
-                            break;
-                        }
-                        println!("-------------------- got one");
-                    }
-                    println!("||| Sending common closer!");
-                    let _ = closer.close();
-                });
-                Some(close)
-            } else {
-                None
-            };
-            let wait_for_manual_close_write = wait_for_manual_close.clone();
-            println!(
-                "[{}] should wait for manual close? {}",
-                direction,
-                wait_for_manual_close.is_some()
-            );
-            let close_read_join = tokio::spawn(async move {
-                pin!(left_end_tx);
-                let res = forward_read(reader, left_end_tx, &mut stop_read).await;
-                println!("[{}] read task ended, {}", direction, &stop_read);
-                // Speed up closing the underlying connection by closing the other channel,
-                // unless we should wait for a toxic to yield explicitly.
-                if wait_for_manual_close.is_none() || stop_read.stop_received() {
-                    println!("[{}] stop the write immediately", direction);
-                    write_stopper.stop();
-                } else if let Some(close) = wait_for_manual_close {
-                    read_stopper2.stop();
-                    println!("[{}] waiting for manual close em all", direction);
-                    let r = close.recv().await;
-                    println!("[{}] waited for manual close {:?}", direction, r);
-                    write_stopper.stop();
-                }
-                res
-            });
-            let close_write_join = tokio::spawn(async move {
-                pin!(right_end_rx);
-                let res = forward_write(right_end_rx, writer, &mut stop_write).await;
-                println!("[{}] write task ended, {}", direction, &stop_write);
-                // Speed up closing the underlying connection by closing the other channel,
-                // unless we should wait for a toxic to yield explicitly.
-                if wait_for_manual_close_write.is_none() || stop_write.stop_received() {
-                    println!("[{}] stop the read immediately", direction);
-                    read_stopper.stop();
-                } else if let Some(close) = wait_for_manual_close_write {
-                    write_stopper2.stop();
-                    println!("[{}] waiting for manual close em all", direction);
-                    let r = close.recv().await;
-                    println!("[{}] waited for manual close {:?}", direction, r);
-                    read_stopper.stop();
-                }
-                res
-            });
-
-            let stop = self.stop.clone();
-            let join_handle = tokio::spawn(async move {
-                let result: Result<(io::Result<Read>, io::Result<Write>), tokio::task::JoinError> =
-                    tokio::try_join!(close_read_join, close_write_join);
-                println!("joined two ends!");
-                match result {
-                    Ok((read_res, write_res)) => {
-                        if let Ok(reader) = read_res {
-                            if let Ok(writer) = write_res {
-                                println!("[{}] disband ready", direction);
-                                let _ = disband_sender.send((reader, writer));
-                                return;
-                            }
-                        }
-                        panic!("read or write sub task failed");
-                    }
-                    Err(err) => {
-                        panic!("read or write sub task failed {:?}", err);
+                };
+                if let Some(res) = maybe_res {
+                    if let Err(_err) = res {
+                        // TODO: log this error from the toxic
                     }
                 }
             });
-
-            let mut prev_pipe_read_rx = left_end_rx;
-
-            for mut runner in toxic_runners {
-                let toxic_name = runner.toxic_name();
-                let toxic_state = toxic_state_holder
-                    .clone()
-                    .and_then(|h| h.get_state_for_toxic(toxic_name));
-                let stop = stop.clone();
-                // Get the desired channel buffer capacity for the toxic (in number of chunks)
-                // This is 1024 for the Latency toxic and 1 for others, similar
-                // to the original Toxiproxy implementation.
-                let (pipe_tx, pipe_rx) =
-                    futures_mpsc::channel::<Bytes>(runner.toxic_kind().chunk_buffer_capacity());
-                let mut stop = stop.clone();
-                tokio::spawn(async move {
-                    let reader = prev_pipe_read_rx;
-
-                    let maybe_res = tokio::select! {
-                        res = runner.run(reader, pipe_tx, toxic_state) => {
-                            println!("pipe closed");
-                            Some(res)
-                        },
-                        _ = stop.recv() => {
-                            println!("stop recv'd");
-                            None
-                        }
-                    };
-                    if let Some(res) = maybe_res {
-                        if let Err(err) = res {
-                            println!("Got err from a toxic {:?}", err);
-                        }
-                    }
-                });
-                prev_pipe_read_rx = pipe_rx;
-            }
-
-            tokio::spawn(async move { prev_pipe_read_rx.map(Ok).forward(right_end_tx).await });
-
-            join_handle
+            prev_pipe_read_rx = pipe_rx;
         }
+
+        tokio::spawn(async move { prev_pipe_read_rx.map(Ok).forward(right_end_tx).await });
+
+        join_handle
     }
 
     /// Cuts all the streams, stops all the ToxicRunner tasks, returns the original
@@ -317,28 +304,7 @@ impl ToxicRunner {
             }
         };
         if let Some(closer) = self.closer.take() {
-            let r = closer.close();
-            println!(
-                "TOXIC DONE [{}] {} {} close sent!",
-                self.toxic.direction,
-                self.toxic_kind(),
-                self.toxic.name
-            );
-            if let Err(err) = r {
-                println!(
-                    "Closer for {} {} errored: {:?}",
-                    self.toxic_name(),
-                    self.toxic.direction,
-                    err
-                );
-            }
-        } else {
-            println!(
-                "TOXIC DONE [{}] {} but no closer {}",
-                self.toxic.direction,
-                self.toxic_kind(),
-                self.toxic_name()
-            );
+            let _ = closer.close();
         }
         return result;
     }

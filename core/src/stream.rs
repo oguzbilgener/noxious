@@ -1,7 +1,6 @@
 use crate::signal::Stop;
 use bytes::{Bytes, BytesMut};
-use futures::{Sink, Stream};
-use futures::{SinkExt, StreamExt};
+use futures::{Sink, SinkExt, Stream, StreamExt};
 use std::io;
 use std::pin::Pin;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -25,22 +24,20 @@ pub(crate) async fn forward(
             match res {
                 Ok(chunk) => {
                     if let Err(_err) = writer.send(chunk.into()).await {
-                        // writer channel closed
-                        println!("fr write chan closed?");
+                        // writer closed
                         break;
                     }
                 }
                 Err(err) => {
-                    // reader channel closed
-                    println!("fr read chan closed?");
+                    // reader closed
                     return Err(err);
                 }
             }
         } else {
+            // stop signal received
             break;
         }
     }
-    // TODO: what happens when we drop the writer stream? the chain closes?
     Ok(())
 }
 
@@ -59,23 +56,19 @@ pub(crate) async fn forward_read(
                 Ok(chunk) => {
                     if let Err(_err) = writer.send(chunk.into()).await {
                         // writer channel closed
-                        // println!("fr write chan closed?");
                         break;
                     }
                 }
                 Err(err) => {
-                    // reader channel o/o error
-                    // println!("fr read chan closed?");
+                    // reader i/o error
                     return Err(err);
                 }
             }
         } else {
-            // reader channel closed
-            println!("well! {}", stop);
+            // stop signal received
             break;
         }
     }
-    // TODO: what happens when we drop the writer stream? the chain closes?
     Ok(reader)
 }
 
@@ -90,7 +83,7 @@ pub(crate) async fn forward_write(
             _ = stop.recv() => None
         };
         if let Some(chunk) = maybe_chunk {
-            if let Err(err) = writer.send(chunk.into()).await {
+            if let Err(_) = writer.send(chunk.into()).await {
                 // writer channel closed
                 break;
             }
