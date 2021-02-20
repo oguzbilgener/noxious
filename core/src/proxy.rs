@@ -12,6 +12,9 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 
+/// The default Go io.Copy buffer size is 32K, so also use 32K buffers here to imitate Toxiproxy.
+const READ_BUFFER_SIZE: usize = 32768;
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ProxyConfig {
     /// An arbitrary name
@@ -78,11 +81,11 @@ pub(crate) async fn run_proxy(
             let (client_read, client_write) = client_stream.into_split();
             let (upstream_read, upstream_write) = upstream.into_split();
 
-            // The default Go io.Copy buffer size is 32K, so also use 32K buffers here to imitate Toxiproxy.
-            let cap: usize = 32768;
-            let client_read = FramedRead::with_capacity(client_read, BytesCodec::new(), cap);
+            let client_read =
+                FramedRead::with_capacity(client_read, BytesCodec::new(), READ_BUFFER_SIZE);
             let client_write = FramedWrite::new(client_write, BytesCodec::new());
-            let upstream_read = FramedRead::with_capacity(upstream_read, BytesCodec::new(), cap);
+            let upstream_read =
+                FramedRead::with_capacity(upstream_read, BytesCodec::new(), READ_BUFFER_SIZE);
             let upstream_write = FramedWrite::new(upstream_write, BytesCodec::new());
 
             let toxics = state.lock().expect("ProxyState poisoned").toxics.clone();

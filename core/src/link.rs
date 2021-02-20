@@ -1,6 +1,6 @@
 use crate::{
     proxy::ProxyConfig,
-    signal::{Stop, Stopper},
+    signal::{Close, Closer, Stop, Stopper},
     state::{ToxicState, ToxicStateHolder},
     stream::{forward, forward_read, forward_write, Read, Write},
     toxic::ToxicKind,
@@ -89,10 +89,47 @@ impl Link {
             let (right_end_tx, right_end_rx) = futures_mpsc::channel::<Bytes>(1);
             let (mut stop_read, read_stopper) = stop.fork();
             let (mut stop_write, write_stopper) = stop.fork();
-            let should_wait_for_manual_close = toxics.iter().any(|toxic| toxic.kind.has_close_logic());
+            let mut toxic_runners: Vec<ToxicRunner> =
+                toxics.into_iter().map(ToxicRunner::new).collect();
+            let read_stopper2 = read_stopper.clone();
+            let write_stopper2 = write_stopper.clone();
+
+            let close_signals: Vec<Close> = toxic_runners
+                .iter_mut()
+                .filter_map(|runner| {
+                    if runner.toxic_kind().has_close_logic() {
+                        let (close, closer) = Close::new();
+                        runner.set_closer(closer);
+                        runner.set_force_stop(stop_write.clone());
+                        Some(close)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let wait_for_manual_close: Option<Close> = if !close_signals.is_empty() {
+                let (close, closer) = Close::new();
+                tokio::spawn(async move {
+                    println!("||| waiting for {} close signals", close_signals.len());
+                    for close in close_signals {
+                        if let Err(_) = close.recv().await {
+                            println!("-------------------- got ERRRRR");
+                            break;
+                        }
+                        println!("-------------------- got one");
+                    }
+                    println!("||| Sending common closer!");
+                    let _ = closer.close();
+                });
+                Some(close)
+            } else {
+                None
+            };
+            let wait_for_manual_close_write = wait_for_manual_close.clone();
             println!(
                 "[{}] should wait for manual close? {}",
-                direction, should_wait_for_manual_close
+                direction,
+                wait_for_manual_close.is_some()
             );
             let close_read_join = tokio::spawn(async move {
                 pin!(left_end_tx);
@@ -100,8 +137,14 @@ impl Link {
                 println!("[{}] read task ended, {}", direction, &stop_read);
                 // Speed up closing the underlying connection by closing the other channel,
                 // unless we should wait for a toxic to yield explicitly.
-                if !should_wait_for_manual_close || stop_read.stop_received() {
+                if wait_for_manual_close.is_none() || stop_read.stop_received() {
                     println!("[{}] stop the write immediately", direction);
+                    write_stopper.stop();
+                } else if let Some(close) = wait_for_manual_close {
+                    read_stopper2.stop();
+                    println!("[{}] waiting for manual close em all", direction);
+                    let r = close.recv().await;
+                    println!("[{}] waited for manual close {:?}", direction, r);
                     write_stopper.stop();
                 }
                 res
@@ -112,8 +155,14 @@ impl Link {
                 println!("[{}] write task ended, {}", direction, &stop_write);
                 // Speed up closing the underlying connection by closing the other channel,
                 // unless we should wait for a toxic to yield explicitly.
-                if !should_wait_for_manual_close || stop_write.stop_received() {
+                if wait_for_manual_close_write.is_none() || stop_write.stop_received() {
                     println!("[{}] stop the read immediately", direction);
+                    read_stopper.stop();
+                } else if let Some(close) = wait_for_manual_close_write {
+                    write_stopper2.stop();
+                    println!("[{}] waiting for manual close em all", direction);
+                    let r = close.recv().await;
+                    println!("[{}] waited for manual close {:?}", direction, r);
                     read_stopper.stop();
                 }
                 res
@@ -143,8 +192,8 @@ impl Link {
 
             let mut prev_pipe_read_rx = left_end_rx;
 
-            for toxic in toxics {
-                let toxic_name = &toxic.name;
+            for mut runner in toxic_runners {
+                let toxic_name = runner.toxic_name();
                 let toxic_state = toxic_state_holder
                     .clone()
                     .and_then(|h| h.get_state_for_toxic(toxic_name));
@@ -153,11 +202,10 @@ impl Link {
                 // This is 1024 for the Latency toxic and 1 for others, similar
                 // to the original Toxiproxy implementation.
                 let (pipe_tx, pipe_rx) =
-                    futures_mpsc::channel::<Bytes>(toxic.kind.chunk_buffer_capacity());
+                    futures_mpsc::channel::<Bytes>(runner.toxic_kind().chunk_buffer_capacity());
                 let mut stop = stop.clone();
                 tokio::spawn(async move {
                     let reader = prev_pipe_read_rx;
-                    let mut runner = ToxicRunner::new(toxic);
 
                     let maybe_res = tokio::select! {
                         res = runner.run(reader, pipe_tx, toxic_state) => {
@@ -208,11 +256,33 @@ impl PartialEq for Link {
 #[derive(Debug)]
 pub(crate) struct ToxicRunner {
     toxic: Toxic,
+    closer: Option<Closer>,
+    force_stop: Option<Stop>,
 }
 
 impl ToxicRunner {
     pub fn new(toxic: Toxic) -> Self {
-        ToxicRunner { toxic }
+        ToxicRunner {
+            toxic,
+            closer: None,
+            force_stop: None,
+        }
+    }
+
+    pub fn toxic_name(&self) -> &str {
+        &self.toxic.name
+    }
+
+    pub fn toxic_kind(&self) -> &ToxicKind {
+        &self.toxic.kind
+    }
+
+    pub fn set_closer(&mut self, closer: Closer) {
+        self.closer = Some(closer);
+    }
+
+    pub fn set_force_stop(&mut self, stop: Stop) {
+        self.force_stop = Some(stop);
     }
 
     pub async fn run(
@@ -223,20 +293,53 @@ impl ToxicRunner {
     ) -> io::Result<()> {
         pin!(input);
         pin!(output);
-        match self.toxic.kind {
+        let result = match self.toxic.kind {
             ToxicKind::Noop => toxics::run_noop(input, output).await,
             ToxicKind::Latency { latency, jitter } => {
                 toxics::run_latency(input, output, latency, jitter).await
             }
             ToxicKind::Timeout { timeout } => toxics::run_timeout(input, output, timeout).await,
             ToxicKind::Bandwidth { rate } => toxics::run_bandwidth(input, output, rate).await,
-            ToxicKind::SlowClose { delay } => toxics::run_slow_close(input, output, delay).await,
+            ToxicKind::SlowClose { delay } => {
+                let stop = self
+                    .force_stop
+                    .take()
+                    .expect("Cannot run slow close without force stop provided");
+                toxics::run_slow_close(input, output, stop, delay).await
+            }
             ToxicKind::Slicer {
                 average_size,
                 size_variation,
                 delay,
             } => toxics::run_slicer(input, output, average_size, size_variation, delay, None).await,
-            ToxicKind::LimitData { bytes } => toxics::run_limit_data(input, output, bytes, state).await,
+            ToxicKind::LimitData { bytes } => {
+                toxics::run_limit_data(input, output, bytes, state).await
+            }
+        };
+        if let Some(closer) = self.closer.take() {
+            let r = closer.close();
+            println!(
+                "TOXIC DONE [{}] {} {} close sent!",
+                self.toxic.direction,
+                self.toxic_kind(),
+                self.toxic.name
+            );
+            if let Err(err) = r {
+                println!(
+                    "Closer for {} {} errored: {:?}",
+                    self.toxic_name(),
+                    self.toxic.direction,
+                    err
+                );
+            }
+        } else {
+            println!(
+                "TOXIC DONE [{}] {} but no closer {}",
+                self.toxic.direction,
+                self.toxic_kind(),
+                self.toxic_name()
+            );
         }
+        return result;
     }
 }

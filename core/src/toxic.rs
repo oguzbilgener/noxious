@@ -115,7 +115,7 @@ impl ToxicKind {
     pub(crate) fn chunk_buffer_capacity(&self) -> usize {
         match self {
             ToxicKind::Latency { .. } => 1024,
-            _ => 1
+            _ => 1,
         }
     }
 }
@@ -144,4 +144,32 @@ pub(super) fn update_toxic_list_in_place(
         }
     }
     Ok(())
+}
+
+impl fmt::Display for ToxicKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ToxicKind::Noop => {
+                write!(f, "Noop")
+            }
+            ToxicKind::Latency { latency, .. } => {
+                write!(f, "Latency({})", latency)
+            }
+            ToxicKind::Timeout { timeout } => {
+                write!(f, "Timeout({})", timeout)
+            }
+            ToxicKind::Bandwidth { rate } => {
+                write!(f, "Bandwidth({})", rate)
+            }
+            ToxicKind::SlowClose { delay } => {
+                write!(f, "SlowClose({})", delay)
+            }
+            ToxicKind::Slicer { average_size, .. } => {
+                write!(f, "Slicer({})", average_size)
+            }
+            ToxicKind::LimitData { bytes } => {
+                write!(f, "LimitData({})", bytes)
+            }
+        }
+    }
 }

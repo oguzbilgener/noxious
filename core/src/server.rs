@@ -79,6 +79,12 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
                         direction: StreamDirection::Upstream,
                     }*/
                     Toxic {
+                        kind: ToxicKind::SlowClose { delay: 12000 },
+                        name: "scRe".to_owned(),
+                        toxicity: 1.0,
+                        direction: StreamDirection::Upstream,
+                    },
+                    Toxic {
                         kind: ToxicKind::LimitData { bytes: 12 },
                         name: "limit data".to_owned(),
                         toxicity: 1.0,
@@ -96,6 +102,12 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
                     Toxic {
                         kind: ToxicKind::SlowClose { delay: 2000 },
                         name: "sc".to_owned(),
+                        toxicity: 1.0,
+                        direction: StreamDirection::Upstream,
+                    },
+                    Toxic {
+                        kind: ToxicKind::Noop,
+                        name: "no".to_owned(),
                         toxicity: 1.0,
                         direction: StreamDirection::Upstream,
                     },

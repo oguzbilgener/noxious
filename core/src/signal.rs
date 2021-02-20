@@ -1,4 +1,5 @@
-use tokio::sync::broadcast;
+use thiserror::Error;
+use tokio::sync::{broadcast, watch};
 
 #[derive(Debug)]
 pub(crate) struct Stop {
@@ -83,5 +84,42 @@ impl Stopper {
 
     pub fn stop(self) {
         let _ = self.sender.send(());
+    }
+}
+#[derive(Debug, Clone)]
+pub(crate) struct Close {
+    // #[pin]
+    receiver: watch::Receiver<Option<()>>,
+}
+
+#[derive(Debug)]
+pub struct Closer {
+    sender: watch::Sender<Option<()>>,
+}
+
+#[derive(Error, Debug)]
+#[error("Close channel closed")]
+pub struct CloseError;
+
+#[derive(Error, Debug)]
+#[error("Could not close, already closed?")]
+pub struct CloserError;
+
+impl Close {
+    pub(crate) fn new() -> (Close, Closer) {
+        let (sender, receiver) = watch::channel(None);
+        let close = Close { receiver };
+        let closer = Closer { sender };
+        (close, closer)
+    }
+
+    pub async fn recv(mut self) -> Result<(), CloseError> {
+        self.receiver.changed().await.map_err(|_| CloseError)
+    }
+}
+
+impl Closer {
+    pub fn close(self) -> Result<(), CloseError> {
+        self.sender.send(Some(())).map_err(|_| CloseError)
     }
 }

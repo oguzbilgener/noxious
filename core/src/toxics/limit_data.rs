@@ -49,7 +49,6 @@ pub async fn run_limit_data(
     }
 
     write_bytes_transmitted(&mut state, bytes_transmitted);
-    println!("limit toxic closing {}", result.is_ok());
     result
 }
 
