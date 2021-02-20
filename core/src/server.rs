@@ -96,6 +96,16 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
                 ],
                 downstream: vec![
                     Toxic {
+                        kind: ToxicKind::Slicer {
+                            average_size: 4,
+                            size_variation: 4,
+                            delay: 100,
+                        },
+                        name: "sl".to_owned(),
+                        toxicity: 1.0,
+                        direction: StreamDirection::Downstream,
+                    },
+                    Toxic {
                         kind: ToxicKind::SlowClose { delay: 5000 },
                         name: "sc2".to_owned(),
                         toxicity: 1.0,

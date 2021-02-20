@@ -197,10 +197,7 @@ pub(crate) struct ToxicRunner {
 
 impl ToxicRunner {
     pub fn new(toxic: Toxic) -> Self {
-
-        ToxicRunner {
-            toxic,
-        }
+        ToxicRunner { toxic }
     }
 
     pub async fn run(
@@ -217,19 +214,13 @@ impl ToxicRunner {
             }
             ToxicKind::Timeout { timeout } => toxics::run_timeout(input, output, timeout).await,
             ToxicKind::Bandwidth { rate } => toxics::run_bandwidth(input, output, rate).await,
-            ToxicKind::SlowClose { delay } => {
-                toxics::run_slow_close(input, output, delay).await
-            }
+            ToxicKind::SlowClose { delay } => toxics::run_slow_close(input, output, delay).await,
             ToxicKind::Slicer {
                 average_size,
                 size_variation,
                 delay,
-            } => {
-                todo!()
-            }
-            ToxicKind::LimitData { bytes } => {
-                todo!()
-            }
+            } => toxics::run_slicer(input, output, average_size, size_variation, delay, None).await,
+            ToxicKind::LimitData { bytes } => toxics::run_limit_data(input, output, bytes).await,
         }
     }
 }

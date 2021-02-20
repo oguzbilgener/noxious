@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures::StreamExt;
+use futures::{stream, StreamExt};
 use futures::{Sink, Stream};
 use rand::distributions::Uniform;
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -33,7 +33,7 @@ pub async fn run_latency(
     } else {
         let range = Uniform::from(0..(jitter * 2));
         let rng = StdRng::from_entropy();
-        let jitter_stream = futures::stream::iter(rng.sample_iter(&range));
+        let jitter_stream = stream::iter(rng.sample_iter(&range));
         let _ = input
             .zip(jitter_stream)
             .then(|(chunk, add)| async move {

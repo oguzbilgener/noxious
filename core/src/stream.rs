@@ -64,12 +64,13 @@ pub(crate) async fn forward_read(
                     }
                 }
                 Err(err) => {
-                    // reader channel closed
+                    // reader channel o/o error
                     // println!("fr read chan closed?");
                     return Err(err);
                 }
             }
         } else {
+            // reader channel closed
             println!("well! {}", stop);
             break;
         }
