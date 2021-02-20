@@ -1,17 +1,21 @@
-use crate::signal::{Stop, Stopper};
-use crate::stream::{forward, forward_read, forward_write, Read, Write};
-use crate::toxic::{StreamDirection, Toxic};
-use crate::toxics;
-use crate::{proxy::ProxyConfig, toxic::ToxicKind};
+use crate::{
+    proxy::ProxyConfig,
+    signal::{Stop, Stopper},
+    state::{ToxicState, ToxicStateHolder},
+    stream::{forward, forward_read, forward_write, Read, Write},
+    toxic::ToxicKind,
+    toxic::{StreamDirection, Toxic},
+    toxics,
+};
 use bytes::Bytes;
 use futures::channel::mpsc as futures_mpsc;
 use futures::StreamExt;
 use futures::{Sink, Stream};
-use std::io;
 use std::net::SocketAddr;
+use std::{io, sync::Arc};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::pin;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex as AsyncMutex};
 use tokio::task::JoinHandle;
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 
@@ -53,7 +57,12 @@ impl Link {
         link
     }
 
-    pub(super) fn establish(&mut self, mut reader: Read, mut writer: Write) -> JoinHandle<()> {
+    pub(super) fn establish(
+        &mut self,
+        mut reader: Read,
+        mut writer: Write,
+        toxic_state_holder: Option<Arc<ToxicStateHolder>>,
+    ) -> JoinHandle<()> {
         let toxics = self.toxics.clone();
 
         let (disband_sender, disband_receiver) = oneshot::channel::<Ends>();
@@ -80,7 +89,7 @@ impl Link {
             let (right_end_tx, right_end_rx) = futures_mpsc::channel::<Bytes>(1);
             let (mut stop_read, read_stopper) = stop.fork();
             let (mut stop_write, write_stopper) = stop.fork();
-            let should_wait_for_manual_close = toxics.iter().any(|toxic| toxic.kind.needs_closer());
+            let should_wait_for_manual_close = toxics.iter().any(|toxic| toxic.kind.has_close_logic());
             println!(
                 "[{}] should wait for manual close? {}",
                 direction, should_wait_for_manual_close
@@ -135,17 +144,23 @@ impl Link {
             let mut prev_pipe_read_rx = left_end_rx;
 
             for toxic in toxics {
+                let toxic_name = &toxic.name;
+                let toxic_state = toxic_state_holder
+                    .clone()
+                    .and_then(|h| h.get_state_for_toxic(toxic_name));
                 let stop = stop.clone();
-                // TODO: Get the desired channel buffer size for the toxic (in number of chunks)
-                // This is 1024 for the Latency toxic and for other toxics, the channel is unbuffered.
-                let (pipe_tx, pipe_rx) = futures_mpsc::channel::<Bytes>(1);
+                // Get the desired channel buffer capacity for the toxic (in number of chunks)
+                // This is 1024 for the Latency toxic and 1 for others, similar
+                // to the original Toxiproxy implementation.
+                let (pipe_tx, pipe_rx) =
+                    futures_mpsc::channel::<Bytes>(toxic.kind.chunk_buffer_capacity());
                 let mut stop = stop.clone();
                 tokio::spawn(async move {
                     let reader = prev_pipe_read_rx;
                     let mut runner = ToxicRunner::new(toxic);
 
                     let maybe_res = tokio::select! {
-                        res = runner.run(reader, pipe_tx) => {
+                        res = runner.run(reader, pipe_tx, toxic_state) => {
                             println!("pipe closed");
                             Some(res)
                         },
@@ -204,6 +219,7 @@ impl ToxicRunner {
         &mut self,
         input: impl Stream<Item = Bytes>,
         output: impl Sink<Bytes>,
+        state: Option<Arc<AsyncMutex<ToxicState>>>,
     ) -> io::Result<()> {
         pin!(input);
         pin!(output);
@@ -220,7 +236,7 @@ impl ToxicRunner {
                 size_variation,
                 delay,
             } => toxics::run_slicer(input, output, average_size, size_variation, delay, None).await,
-            ToxicKind::LimitData { bytes } => toxics::run_limit_data(input, output, bytes).await,
+            ToxicKind::LimitData { bytes } => toxics::run_limit_data(input, output, bytes, state).await,
         }
     }
 }

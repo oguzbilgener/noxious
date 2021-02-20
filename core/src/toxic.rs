@@ -98,10 +98,24 @@ impl ToxicEvent {
 }
 
 impl ToxicKind {
-    pub(crate) fn needs_closer(&self) -> bool {
+    pub(crate) fn has_close_logic(&self) -> bool {
         match self {
             ToxicKind::SlowClose { .. } | ToxicKind::LimitData { .. } => true,
             _ => false,
+        }
+    }
+
+    pub(crate) fn is_stateful(&self) -> bool {
+        match self {
+            ToxicKind::LimitData { .. } => true,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn chunk_buffer_capacity(&self) -> usize {
+        match self {
+            ToxicKind::Latency { .. } => 1024,
+            _ => 1
         }
     }
 }

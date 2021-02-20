@@ -1,8 +1,7 @@
-use crate::signal::Stop;
 use crate::toxic::{update_toxic_list_in_place, StreamDirection, Toxic, ToxicEvent};
 use crate::{error::NotFoundError, link::Link};
+use crate::{signal::Stop, state::ToxicStateHolder};
 use futures::{stream, StreamExt};
-use rand::rngs::StdRng;
 use std::collections::HashMap;
 use std::io;
 use std::mem;
@@ -27,6 +26,9 @@ pub(crate) struct ProxyConfig {
 pub struct Links {
     upstream: Link,
     client: Link,
+    /// Optional, connection-wide state for toxics that need such state (like LimitData)
+    /// Toxic Name -> State
+    state_holder: Option<Arc<ToxicStateHolder>>,
 }
 
 #[derive(Debug, Clone)]
@@ -35,8 +37,9 @@ pub(super) struct Toxics {
     pub(super) downstream: Vec<Toxic>,
 }
 
+#[derive(Debug)]
 pub struct ProxyState {
-    // Socket address --> (Upstream, Downstream)
+    /// Socket address -> (Upstream, Downstream)
     clients: HashMap<SocketAddr, Links>,
     toxics: Toxics,
 }
@@ -45,8 +48,6 @@ pub(crate) async fn run_proxy(
     config: ProxyConfig,
     receiver: mpsc::Receiver<ToxicEvent>,
     initial_toxics: Toxics,
-    // The shared random number generator with a common, user-determined seed
-    rng: Option<Arc<Mutex<StdRng>>>,
     mut stop: Stop,
 ) -> io::Result<()> {
     let listener = TcpListener::bind(&config.listen).await?;
@@ -77,8 +78,8 @@ pub(crate) async fn run_proxy(
             let (client_read, client_write) = client_stream.into_split();
             let (upstream_read, upstream_write) = upstream.into_split();
 
-            // TODO: the default Go io.Copy buffer size is 32K, so also use 32K buffers here to imitate Toxiproxy.
-            let cap: usize = 1024;
+            // The default Go io.Copy buffer size is 32K, so also use 32K buffers here to imitate Toxiproxy.
+            let cap: usize = 32768;
             let client_read = FramedRead::with_capacity(client_read, BytesCodec::new(), cap);
             let client_write = FramedWrite::new(client_write, BytesCodec::new());
             let upstream_read = FramedRead::with_capacity(upstream_read, BytesCodec::new(), cap);
@@ -138,6 +139,8 @@ fn create_links(
 
     let (links_stop, links_stopper) = stop.fork();
 
+    let toxics_state_holder = ToxicStateHolder::for_toxics(&toxics);
+
     let mut upstream_link = Link::new(
         addr,
         StreamDirection::Upstream,
@@ -153,10 +156,11 @@ fn create_links(
         links_stop.clone(),
     );
 
-    let upstream_handle = upstream_link.establish(client_read, upstream_write);
-    let downstream_handle = client_link.establish(upstream_read, client_write);
+    let upstream_handle =
+        upstream_link.establish(client_read, upstream_write, toxics_state_holder.clone());
+    let downstream_handle =
+        client_link.establish(upstream_read, client_write, toxics_state_holder.clone());
 
-    // let stop = stop.clone();
     let addr = addr.clone();
     let state = state.clone();
     tokio::spawn(async move {
@@ -178,6 +182,7 @@ fn create_links(
         Links {
             upstream: upstream_link,
             client: client_link,
+            state_holder: toxics_state_holder,
         },
     );
     Ok(())
@@ -223,6 +228,7 @@ async fn listen_toxic_events(
 
             let mut elements = stream::iter(old_map);
             while let Some((addr, links)) = elements.next().await {
+                // TODO: fix error handling here
                 let (client_read, upstream_write) = links.client.disband().await.expect("failed 1");
                 let (upstream_read, client_write) =
                     links.upstream.disband().await.expect("failed 2");

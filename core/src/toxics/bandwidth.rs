@@ -1,6 +1,5 @@
 use super::run_noop;
-use crate::toxic::{Toxic, ToxicKind};
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::Bytes;
 use futures::{Sink, Stream};
 use futures::{SinkExt, StreamExt};
 use std::convert::TryInto;
@@ -8,6 +7,9 @@ use std::io;
 use std::time::Duration;
 use tokio::pin;
 use tokio::time::sleep;
+
+const INTERVAL: u64 = 100;
+const UNIT: usize = 100;
 
 pub async fn run_bandwidth(
     input: impl Stream<Item = Bytes>,
@@ -37,16 +39,16 @@ pub async fn run_bandwidth(
             .expect("Could not convert bandwidth rate from u64 to usize");
 
         // If the rate is low enough, split the packet up and send in 100 millisecond intervals
-        while chunk.len() > rate * 100 {
-            sleep(Duration::from_millis(100)).await;
-            let to_send = chunk.split_to(100);
+        while chunk.len() > rate * UNIT {
+            sleep(Duration::from_millis(INTERVAL)).await;
+            let to_send = chunk.split_to(UNIT);
             if let Err(_) = output.send(to_send).await {
                 return Err(io::Error::new(
                     io::ErrorKind::ConnectionReset,
                     "Write channel closed",
                 ));
             }
-            to_sleep -= Duration::from_millis(100);
+            to_sleep -= Duration::from_millis(INTERVAL);
         }
         // sleep's granularity is 1ms
         if to_sleep.as_millis() > 0 {

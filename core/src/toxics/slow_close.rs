@@ -29,7 +29,7 @@ pub async fn run_slow_close(
     println!("done ok but delaying by some time");
 
     sleep(Duration::from_millis(delay)).await;
-    print!("now closing task!\n  ## ");
+    print!("after {}ms, closing slow close!\n  ## ", delay);
 
     res
 }

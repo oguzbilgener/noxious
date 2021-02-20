@@ -1,4 +1,3 @@
-use crate::toxic::Toxic;
 use bytes::Bytes;
 use futures::StreamExt;
 use futures::{Sink, Stream};

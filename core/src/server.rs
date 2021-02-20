@@ -79,6 +79,12 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
                         direction: StreamDirection::Upstream,
                     }*/
                     Toxic {
+                        kind: ToxicKind::LimitData { bytes: 12 },
+                        name: "limit data".to_owned(),
+                        toxicity: 1.0,
+                        direction: StreamDirection::Upstream,
+                    },
+                    Toxic {
                         kind: ToxicKind::Latency {
                             latency: 500,
                             jitter: 450,
@@ -88,7 +94,7 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
                         direction: StreamDirection::Upstream,
                     },
                     Toxic {
-                        kind: ToxicKind::SlowClose { delay: 20000 },
+                        kind: ToxicKind::SlowClose { delay: 2000 },
                         name: "sc".to_owned(),
                         toxicity: 1.0,
                         direction: StreamDirection::Upstream,
@@ -113,7 +119,6 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
                     },
                 ],
             },
-            None,
             s2,
         )
         .await
@@ -125,7 +130,7 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
     });
 
     tokio::spawn(async move {
-        if let Err(err) = run_proxy(proxy_config, event_rx, initial_toxics, None, stop).await {
+        if let Err(err) = run_proxy(proxy_config, event_rx, initial_toxics, stop).await {
             println!("run proxy err");
             dbg!(err);
         }
