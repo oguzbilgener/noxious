@@ -1,6 +1,5 @@
 use bytes::Bytes;
-use futures::{stream, StreamExt};
-use futures::{Sink, Stream};
+use futures::{stream, StreamExt, Sink, Stream};
 use rand::distributions::Uniform;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::io;
@@ -20,6 +19,7 @@ pub async fn run_latency(
     output: impl Sink<Bytes>,
     latency: u64,
     jitter: u64,
+    rand_seed: Option<u64>,
 ) -> io::Result<()> {
     if jitter == 0 {
         let _ = input
@@ -32,8 +32,12 @@ pub async fn run_latency(
             .await;
     } else {
         let range = Uniform::from(0..(jitter * 2));
-        let rng = StdRng::from_entropy();
-        let jitter_stream = stream::iter(rng.sample_iter(&range));
+        let rand_gen = if let Some(seed) = rand_seed {
+            StdRng::seed_from_u64(seed)
+        } else {
+            StdRng::from_entropy()
+        };
+        let jitter_stream = stream::iter(rand_gen.sample_iter(&range));
         let _ = input
             .zip(jitter_stream)
             .then(|(chunk, add)| async move {

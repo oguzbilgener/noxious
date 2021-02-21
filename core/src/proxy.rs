@@ -1,13 +1,16 @@
-use crate::toxic::{update_toxic_list_in_place, StreamDirection, Toxic, ToxicEvent};
-use crate::{error::NotFoundError, link::Link};
-use crate::{signal::Stop, state::ToxicStateHolder};
+use crate::{
+    error::NotFoundError,
+    link::Link,
+    signal::Stop,
+    state::ToxicStateHolder,
+    stream::{Read, Write},
+    toxic::{update_toxic_list_in_place, StreamDirection, Toxic, ToxicEvent},
+};
 use futures::{stream, StreamExt};
 use std::collections::HashMap;
-use std::io;
-use std::mem;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use std::{io, mem};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
@@ -23,6 +26,8 @@ pub(crate) struct ProxyConfig {
     pub listen: String,
     /// The host name and the port the proxy connects to, like 127.0.0:5432
     pub upstream: String,
+    /// A random seed
+    pub rand_seed: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -120,10 +125,10 @@ fn create_links(
     config: &ProxyConfig,
     stop: &mut Stop,
     toxics: Toxics,
-    client_read: FramedRead<OwnedReadHalf, BytesCodec>,
-    client_write: FramedWrite<OwnedWriteHalf, BytesCodec>,
-    upstream_read: FramedRead<OwnedReadHalf, BytesCodec>,
-    upstream_write: FramedWrite<OwnedWriteHalf, BytesCodec>,
+    client_read: Read,
+    client_write: Write,
+    upstream_read: Read,
+    upstream_write: Write,
 ) -> io::Result<()> {
     let mut current_state = state.lock().expect(&format!(
         "ProxyState poisoned for upstream {}",
@@ -181,6 +186,7 @@ fn create_links(
         links_stopper.stop();
         let mut state = state.lock().expect("ProxyState poisoned");
         state.clients.remove(&addr);
+        println!("removed {}", &addr);
     });
 
     current_state.clients.insert(

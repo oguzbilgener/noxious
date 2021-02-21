@@ -11,13 +11,12 @@ use bytes::Bytes;
 use futures::channel::mpsc as futures_mpsc;
 use futures::StreamExt;
 use futures::{Sink, Stream};
+use rand::{distributions::Standard, rngs::StdRng, Rng, SeedableRng};
 use std::net::SocketAddr;
 use std::{io, sync::Arc};
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::pin;
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
 use tokio::task::JoinHandle;
-use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 
 #[derive(Debug)]
 pub(crate) struct Link {
@@ -29,10 +28,7 @@ pub(crate) struct Link {
     disband_receiver: Option<oneshot::Receiver<Ends>>,
 }
 
-type Ends = (
-    FramedRead<OwnedReadHalf, BytesCodec>,
-    FramedWrite<OwnedWriteHalf, BytesCodec>,
-);
+type Ends = (Read, Write);
 
 impl Link {
     pub(crate) fn new(
@@ -98,8 +94,17 @@ impl Link {
         let mut stop = self.stop.clone();
         let (left_end_tx, left_end_rx) = futures_mpsc::channel::<Bytes>(1);
         let (right_end_tx, right_end_rx) = futures_mpsc::channel::<Bytes>(1);
-        let mut toxic_runners: Vec<ToxicRunner> =
-            toxics.into_iter().map(ToxicRunner::new).collect();
+
+        let rand_gen = if let Some(seed) = self.config.rand_seed {
+            StdRng::seed_from_u64(seed)
+        } else {
+            StdRng::from_entropy()
+        };
+        let mut toxic_runners: Vec<ToxicRunner> = toxics
+            .into_iter()
+            .zip(rand_gen.sample_iter(Standard))
+            .map(ToxicRunner::new)
+            .collect();
 
         let (close_read_join, close_write_join): (
             JoinHandle<io::Result<Read>>,
@@ -143,6 +148,7 @@ impl Link {
         let toxic_state =
             toxic_state_holder.and_then(|holder| holder.get_state_for_toxic(toxic_name));
         let stop = stop.clone();
+        let rand_seed = self.config.rand_seed;
         // Get the desired channel buffer capacity for the toxic (in number of chunks)
         // This is 1024 for the Latency toxic and 1 for others, similar
         // to the original Toxiproxy implementation.
@@ -151,12 +157,8 @@ impl Link {
         let mut stop = stop.clone();
         tokio::spawn(async move {
             let maybe_res = tokio::select! {
-                res = runner.run(prev_pipe_read_rx, pipe_tx, toxic_state) => {
-                    Some(res)
-                },
-                _ = stop.recv() => {
-                    None
-                }
+                res = runner.run(prev_pipe_read_rx, pipe_tx, toxic_state, rand_seed) => Some(res),
+                _ = stop.recv() => None,
             };
             if let Some(res) = maybe_res {
                 if let Err(_err) = res {
@@ -298,14 +300,16 @@ impl PartialEq for Link {
 
 #[derive(Debug)]
 pub(crate) struct ToxicRunner {
+    active: bool,
     toxic: Toxic,
     closer: Option<Closer>,
     force_stop: Option<Stop>,
 }
 
 impl ToxicRunner {
-    pub fn new(toxic: Toxic) -> Self {
+    pub fn new((toxic, threshold): (Toxic, f32)) -> Self {
         ToxicRunner {
+            active: toxic.toxicity > threshold,
             toxic,
             closer: None,
             force_stop: None,
@@ -333,31 +337,46 @@ impl ToxicRunner {
         input: impl Stream<Item = Bytes>,
         output: impl Sink<Bytes>,
         state: Option<Arc<AsyncMutex<ToxicState>>>,
+        rand_seed: Option<u64>,
     ) -> io::Result<()> {
         pin!(input);
         pin!(output);
-        let result = match self.toxic.kind {
-            ToxicKind::Noop => toxics::run_noop(input, output).await,
-            ToxicKind::Latency { latency, jitter } => {
-                toxics::run_latency(input, output, latency, jitter).await
+        let result = if self.active {
+            match self.toxic.kind {
+                ToxicKind::Noop => toxics::run_noop(input, output).await,
+                ToxicKind::Latency { latency, jitter } => {
+                    toxics::run_latency(input, output, latency, jitter, rand_seed).await
+                }
+                ToxicKind::Timeout { timeout } => toxics::run_timeout(input, output, timeout).await,
+                ToxicKind::Bandwidth { rate } => toxics::run_bandwidth(input, output, rate).await,
+                ToxicKind::SlowClose { delay } => {
+                    let stop = self
+                        .force_stop
+                        .take()
+                        .expect("Cannot run slow close without force stop provided");
+                    toxics::run_slow_close(input, output, stop, delay).await
+                }
+                ToxicKind::Slicer {
+                    average_size,
+                    size_variation,
+                    delay,
+                } => {
+                    toxics::run_slicer(
+                        input,
+                        output,
+                        average_size,
+                        size_variation,
+                        delay,
+                        rand_seed,
+                    )
+                    .await
+                }
+                ToxicKind::LimitData { bytes } => {
+                    toxics::run_limit_data(input, output, bytes, state).await
+                }
             }
-            ToxicKind::Timeout { timeout } => toxics::run_timeout(input, output, timeout).await,
-            ToxicKind::Bandwidth { rate } => toxics::run_bandwidth(input, output, rate).await,
-            ToxicKind::SlowClose { delay } => {
-                let stop = self
-                    .force_stop
-                    .take()
-                    .expect("Cannot run slow close without force stop provided");
-                toxics::run_slow_close(input, output, stop, delay).await
-            }
-            ToxicKind::Slicer {
-                average_size,
-                size_variation,
-                delay,
-            } => toxics::run_slicer(input, output, average_size, size_variation, delay, None).await,
-            ToxicKind::LimitData { bytes } => {
-                toxics::run_limit_data(input, output, bytes, state).await
-            }
+        } else {
+            toxics::run_noop(input, output).await
         };
         if let Some(closer) = self.closer.take() {
             let _ = closer.close();

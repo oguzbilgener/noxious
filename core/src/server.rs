@@ -16,6 +16,7 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
         name: "mongo".to_owned(),
         listen: "127.0.0.1:27016".to_owned(),
         upstream: "127.0.0.1:27017".to_owned(),
+        rand_seed: None,
     };
 
     let (stop, stopper) = Stop::new();
@@ -65,6 +66,7 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
             name: "echo".to_owned(),
             listen: "127.0.0.1:12344".to_owned(),
             upstream: "127.0.0.1:12345".to_owned(),
+            rand_seed: None,
         };
         let (_, event_rx) = mpsc::channel::<ToxicEvent>(16);
         if let Err(err) = run_proxy(
@@ -81,13 +83,13 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
                     Toxic {
                         kind: ToxicKind::SlowClose { delay: 8000 },
                         name: "scRe".to_owned(),
-                        toxicity: 1.0,
+                        toxicity: 0.4,
                         direction: StreamDirection::Upstream,
                     },
                     Toxic {
                         kind: ToxicKind::LimitData { bytes: 12 },
                         name: "limit data".to_owned(),
-                        toxicity: 1.0,
+                        toxicity: 0.3,
                         direction: StreamDirection::Upstream,
                     },
                     Toxic {
@@ -102,7 +104,7 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
                     Toxic {
                         kind: ToxicKind::SlowClose { delay: 2000 },
                         name: "sc".to_owned(),
-                        toxicity: 1.0,
+                        toxicity: 0.5,
                         direction: StreamDirection::Upstream,
                     },
                     Toxic {
@@ -120,7 +122,7 @@ pub async fn run(_initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<
                             delay: 100,
                         },
                         name: "sl".to_owned(),
-                        toxicity: 1.0,
+                        toxicity: 0.2,
                         direction: StreamDirection::Downstream,
                     },
                     Toxic {
