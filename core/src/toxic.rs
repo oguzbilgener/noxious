@@ -146,6 +146,12 @@ pub(super) fn update_toxic_list_in_place(
     Ok(())
 }
 
+impl fmt::Display for Toxic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.name, self.kind)
+    }
+}
+
 impl fmt::Display for ToxicKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

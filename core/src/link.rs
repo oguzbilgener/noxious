@@ -181,10 +181,11 @@ impl Link {
         let (mut stop_read, read_stopper) = stop.fork();
         let (mut stop_write, write_stopper) = stop.fork();
 
-        let (force_stop_toxics, toxic_force_stopper) = Stop::new();
+        let (override_stop_toxics, toxic_override_stopper) = stop.fork();
+        let toxic_override_stopper_clone = toxic_override_stopper.clone();
 
         let wait_for_manual_close: Option<Close> =
-            self.prepare_manual_close_signals(&mut toxic_runners, force_stop_toxics);
+            self.prepare_manual_close_signals(&mut toxic_runners, override_stop_toxics);
 
         let wait_for_manual_close_write = wait_for_manual_close.clone();
         let close_read_join = tokio::spawn(async move {
@@ -195,6 +196,7 @@ impl Link {
             if wait_for_manual_close.is_none() || stop_read.stop_received() {
                 write_stopper.stop();
             } else if let Some(close) = wait_for_manual_close {
+                toxic_override_stopper.stop();
                 let _ = close.recv().await;
                 write_stopper.stop();
             }
@@ -209,7 +211,7 @@ impl Link {
             if wait_for_manual_close_write.is_none() || stop_write.stop_received() {
                 read_stopper.stop();
             } else if let Some(close) = wait_for_manual_close_write {
-                toxic_force_stopper.stop();
+                toxic_override_stopper_clone.stop();
                 let _ = close.recv().await;
                 read_stopper.stop();
             }
@@ -221,15 +223,15 @@ impl Link {
     fn prepare_manual_close_signals(
         &self,
         toxic_runners: &mut [ToxicRunner],
-        force_stop_toxics: Stop,
+        override_stop_toxics: Stop,
     ) -> Option<Close> {
         let close_signals: Vec<Close> = toxic_runners
             .iter_mut()
             .filter_map(|runner| {
-                if runner.toxic_kind().has_close_logic() {
+                if runner.is_active() && runner.toxic_kind().has_close_logic() {
                     let (close, closer) = Close::new();
                     runner.set_closer(closer);
-                    runner.set_force_stop(force_stop_toxics.clone());
+                    runner.set_override_stop(override_stop_toxics.clone());
                     Some(close)
                 } else {
                     None
@@ -238,11 +240,10 @@ impl Link {
             .collect();
         if !close_signals.is_empty() {
             let (close, closer) = Close::new();
+
             tokio::spawn(async move {
                 for close in close_signals {
-                    if let Err(_) = close.recv().await {
-                        break;
-                    }
+                    let _ = close.recv().await;
                 }
                 let _ = closer.close();
             });
@@ -303,7 +304,7 @@ pub(crate) struct ToxicRunner {
     active: bool,
     toxic: Toxic,
     closer: Option<Closer>,
-    force_stop: Option<Stop>,
+    override_stop: Option<Stop>,
 }
 
 impl ToxicRunner {
@@ -312,8 +313,12 @@ impl ToxicRunner {
             active: toxic.toxicity > threshold,
             toxic,
             closer: None,
-            force_stop: None,
+            override_stop: None,
         }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active
     }
 
     pub fn toxic_name(&self) -> &str {
@@ -328,8 +333,15 @@ impl ToxicRunner {
         self.closer = Some(closer);
     }
 
-    pub fn set_force_stop(&mut self, stop: Stop) {
-        self.force_stop = Some(stop);
+    pub fn set_override_stop(&mut self, stop: Stop) {
+        self.override_stop = Some(stop);
+    }
+
+    fn take_override_stop(&mut self) -> Stop {
+        self.override_stop.take().expect(&format!(
+            "State error: cannot run toxic {} without a override stop signal",
+            self.toxic
+        ))
     }
 
     pub async fn run(
@@ -350,10 +362,7 @@ impl ToxicRunner {
                 ToxicKind::Timeout { timeout } => toxics::run_timeout(input, output, timeout).await,
                 ToxicKind::Bandwidth { rate } => toxics::run_bandwidth(input, output, rate).await,
                 ToxicKind::SlowClose { delay } => {
-                    let stop = self
-                        .force_stop
-                        .take()
-                        .expect("Cannot run slow close without force stop provided");
+                    let stop = self.take_override_stop();
                     toxics::run_slow_close(input, output, stop, delay).await
                 }
                 ToxicKind::Slicer {
@@ -372,7 +381,8 @@ impl ToxicRunner {
                     .await
                 }
                 ToxicKind::LimitData { bytes } => {
-                    toxics::run_limit_data(input, output, bytes, state).await
+                    let stop = self.take_override_stop();
+                    toxics::run_limit_data(input, output, stop, bytes, state).await
                 }
             }
         } else {

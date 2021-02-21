@@ -6,10 +6,10 @@ mod slicer;
 mod slow_close;
 mod timeout;
 
-pub use bandwidth::*;
-pub use latency::*;
-pub use limit_data::*;
-pub use noop::*;
-pub use slicer::*;
+pub(crate) use bandwidth::*;
+pub(crate) use latency::*;
+pub(crate) use limit_data::*;
+pub(crate) use noop::*;
+pub(crate) use slicer::*;
 pub(crate) use slow_close::*;
-pub use timeout::*;
+pub(crate) use timeout::*;

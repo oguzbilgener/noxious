@@ -1,4 +1,4 @@
-use crate::state::ToxicState;
+use crate::{signal::Stop, state::ToxicState};
 use bytes::Bytes;
 use futures::{Sink, Stream};
 use futures::{SinkExt, StreamExt};
@@ -8,9 +8,10 @@ use tokio::pin;
 use tokio::sync::Mutex as AsyncMutex;
 
 /// Run the slicer toxic
-pub async fn run_limit_data(
+pub(crate) async fn run_limit_data(
     input: impl Stream<Item = Bytes>,
     output: impl Sink<Bytes>,
+    mut stop: Stop,
     bytes: u64,
     state: Option<Arc<AsyncMutex<ToxicState>>>,
 ) -> io::Result<()> {
@@ -25,20 +26,29 @@ pub async fn run_limit_data(
     let mut bytes_transmitted: usize = get_bytes_transmitted(&state);
     let mut result = io::Result::Ok(());
 
-    while bytes_transmitted < bytes {
-        if let Some(mut chunk) = input.next().await {
-            let remaining: usize = bytes - bytes_transmitted;
-            if remaining > 0 {
-                chunk.truncate(remaining);
-                let to_send = chunk.len();
+    while !stop.stop_received() {
+        if bytes_transmitted < bytes {
+            let maybe_chunk = tokio::select! {
+                res = input.next() => res,
+                _ = stop.recv() => None,
+            };
 
-                if let Ok(_) = output.send(chunk).await {
-                    bytes_transmitted += to_send;
+            if let Some(mut chunk) = maybe_chunk {
+                let remaining: usize = bytes - bytes_transmitted;
+                if remaining > 0 {
+                    chunk.truncate(remaining);
+                    let to_send = chunk.len();
+
+                    if let Ok(_) = output.send(chunk).await {
+                        bytes_transmitted += to_send;
+                    } else {
+                        result = Err(io::Error::new(
+                            io::ErrorKind::ConnectionReset,
+                            "limit data channel closed",
+                        ))
+                    }
                 } else {
-                    result = Err(io::Error::new(
-                        io::ErrorKind::ConnectionReset,
-                        "limit data channel closed",
-                    ))
+                    break;
                 }
             } else {
                 break;

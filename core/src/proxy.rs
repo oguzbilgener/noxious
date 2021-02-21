@@ -186,7 +186,7 @@ fn create_links(
         links_stopper.stop();
         let mut state = state.lock().expect("ProxyState poisoned");
         state.clients.remove(&addr);
-        println!("removed {}", &addr);
+        println!("Removed {}", addr);
     });
 
     current_state.clients.insert(

@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::pin;
 use tokio::time::sleep;
 
-/// The SlowCloseToxic stops the TCP connection from closing until after a delay.
+/// The SlowClose prevents the proxy connection from closing until after a delay.
 pub(crate) async fn run_slow_close(
     input: impl Stream<Item = Bytes>,
     output: impl Sink<Bytes>,
