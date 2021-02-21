@@ -1,16 +1,15 @@
-
-mod latency;
-mod timeout;
 mod bandwidth;
-mod slow_close;
+mod latency;
+mod limit_data;
 mod noop;
 mod slicer;
-mod limit_data;
+mod slow_close;
+mod timeout;
 
-pub use latency::*;
-pub use timeout::*;
 pub use bandwidth::*;
-pub use slow_close::*;
+pub use latency::*;
+pub use limit_data::*;
 pub use noop::*;
 pub use slicer::*;
-pub use limit_data::*;
+pub(crate) use slow_close::*;
+pub use timeout::*;

@@ -15,9 +15,7 @@ pub(crate) async fn run_slow_close(
 ) -> io::Result<()> {
     pin!(input);
     pin!(output);
-
     let mut res: io::Result<()> = Ok(());
-
     while !stop.stop_received() {
         let maybe_chunk = tokio::select! {
             res = input.next() => res,
@@ -25,7 +23,6 @@ pub(crate) async fn run_slow_close(
         };
         if let Some(chunk) = maybe_chunk {
             if let Err(_) = output.send(chunk).await {
-                println!("SLOW {} done err bc send err", delay);
                 res = Err(io::Error::new(
                     io::ErrorKind::ConnectionReset,
                     "Write channel closed",
@@ -35,14 +32,6 @@ pub(crate) async fn run_slow_close(
             break;
         }
     }
-
-    println!(
-        "SLOW {} done ({}) but delaying by {}ms",
-        delay, &stop, delay
-    );
-
     sleep(Duration::from_millis(delay)).await;
-    print!("after {}ms, closing slow close!\n##\n", delay);
-
     res
 }

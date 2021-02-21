@@ -244,7 +244,6 @@ async fn process_toxic_event(
 
     let mut elements = stream::iter(old_map);
     while let Some((addr, links)) = elements.next().await {
-        // TODO: fix error handling here
         if let Err(err) = recreate_links(
             state.clone(),
             &config,
@@ -271,7 +270,6 @@ async fn recreate_links(
 ) -> io::Result<()> {
     let (client_read, upstream_write) = links.client.disband().await?;
     let (upstream_read, client_write) = links.upstream.disband().await?;
-
     create_links(
         state.clone(),
         addr,

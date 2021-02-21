@@ -46,11 +46,5 @@ pub async fn run_latency(
             .await;
     }
 
-    // let mut rng = if let Some(seed) = rand_seed {
-    //     StdRng::seed_from_u64(seed)
-    // } else {
-    //     StdRng::from_entropy()
-    // };
-
     Ok(())
 }
