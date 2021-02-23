@@ -8,4 +8,3 @@ edition = "2018"
 tokio = { version = "1", features = ["macros", "sync", "net", "rt-multi-thread", "signal"] }
 noxious = { path = "../core" }
 warp = "0.3.0"
-chrono = "0.4.19"
