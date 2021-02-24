@@ -1,8 +1,10 @@
 use std::default::Default;
 use std::net::SocketAddr;
 use tokio::signal;
+use tracing::{debug, instrument};
 
 mod api;
+mod util;
 
 struct Args {
     /// The host to listen on for the API server
@@ -28,6 +30,7 @@ impl Default for Args {
 
 #[tokio::main]
 async fn main() {
+    util::init_tracing();
 
     // TODO: parse the json file, deserialize all toxics, start the core server
 
@@ -36,6 +39,9 @@ async fn main() {
     //     .await
     //     .expect("uh?");
 
-    api::serve(SocketAddr::new([127, 0, 0, 1].into(), 1234), signal::ctrl_c())
-        .await;
+    api::serve(
+        SocketAddr::new([127, 0, 0, 1].into(), 1234),
+        signal::ctrl_c(),
+    )
+    .await;
 }

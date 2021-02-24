@@ -1,4 +1,6 @@
-use std::{future::Future, net::SocketAddr};
+use crate::util;
+use std::{fmt::Debug, future::Future, net::SocketAddr};
+use tracing::{info, instrument};
 use warp::{Filter, Rejection, Reply};
 
 // rest api
@@ -17,6 +19,13 @@ fn make_filters() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clon
 }
 
 pub async fn serve(addr: SocketAddr, shutdown: impl Future) {
+    let version = util::get_version();
+    info!(
+        addr = ?addr,
+        version = ?version,
+        "API HTTP server starting"
+    );
+
     let api = make_filters();
     let routes = api.with(warp::log("noxious"));
     tokio::select! {
