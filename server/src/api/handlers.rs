@@ -1,7 +1,11 @@
 use std::convert::Infallible;
 use warp::http::StatusCode;
 // use serde_derive::{Deserialize, Serialize};
+use super::Sender;
 use crate::util;
+use bmrng::RequestSender;
+use noxious::error::NotFoundError;
+use noxious::{ToxicEvent, ToxicEventKind};
 use warp::{Filter, Rejection, Reply};
 
 // #[derive(Serialize)]
@@ -10,16 +14,21 @@ use warp::{Filter, Rejection, Reply};
 //     message: String,
 // }
 
-pub async fn reset_state() -> Result<impl Reply, Infallible> {
+pub async fn reset_state(sender: Sender) -> Result<impl Reply, Infallible> {
     todo!();
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn get_proxy(name: String) -> Result<impl Reply, Infallible> {
+pub async fn stub(sender: Sender) -> Result<impl Reply, Infallible> {
+    todo!();
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn get_toxic(proxy_name: String, toxic_name: String) -> Result<impl Reply, Infallible> {
+pub async fn get_proxy(name: String, sender: Sender) -> Result<impl Reply, Infallible> {
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn get_toxic(proxy_name: String, toxic_name: String, sender: Sender) -> Result<impl Reply, Infallible> {
     Ok(StatusCode::NO_CONTENT)
 }
 

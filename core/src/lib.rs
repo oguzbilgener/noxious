@@ -24,7 +24,7 @@
 #[macro_use]
 extern crate serde_derive;
 
-mod error;
+pub mod error;
 mod link;
 mod proxy;
 mod server;
@@ -35,6 +35,7 @@ mod toxic;
 mod toxics;
 
 pub use server::run;
+pub use toxic::{ToxicEvent, ToxicEventKind};
 
 #[cfg(test)]
 mod tests {

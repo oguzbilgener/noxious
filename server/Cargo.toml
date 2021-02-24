@@ -13,3 +13,4 @@ tracing-log = { version = "0.1.2", features = ["env_logger", "log-tracer"] }
 tracing-opentelemetry = "0.11.0"
 log = "0.4.14"
 pretty_env_logger = "0.4.0"
+bmrng = "0.4.0"

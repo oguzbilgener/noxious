@@ -1,7 +1,12 @@
+use bmrng::{channel, RequestSender};
+use noxious::error::NotFoundError;
+use noxious::{ToxicEvent, ToxicEventKind};
 use std::default::Default;
 use std::net::SocketAddr;
 use tokio::signal;
 use tracing::{debug, instrument};
+
+type Sender = RequestSender<ToxicEvent, Result<(), NotFoundError>>;
 
 mod api;
 mod util;
@@ -32,6 +37,8 @@ impl Default for Args {
 async fn main() {
     util::init_tracing();
 
+    let (sender, receiver) = bmrng::channel::<ToxicEvent, Result<(), NotFoundError>>(1);
+
     // TODO: parse the json file, deserialize all toxics, start the core server
 
     // TODO: harmonious shutdown handling
@@ -40,7 +47,8 @@ async fn main() {
     //     .expect("uh?");
 
     api::serve(
-        SocketAddr::new([127, 0, 0, 1].into(), 1234),
+        SocketAddr::new([127, 0, 0, 1].into(), 8474),
+        sender,
         signal::ctrl_c(),
     )
     .await;

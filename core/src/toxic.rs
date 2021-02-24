@@ -50,10 +50,11 @@ pub enum ToxicEventKind {
     ToxicAdd(Toxic),
     ToxicUpdate(Toxic),
     ToxicRemove(String),
+    ToxicRemoveAll,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct ToxicEvent {
+pub struct ToxicEvent {
     pub(super) proxy_name: String,
     pub(super) direction: StreamDirection,
     pub(super) toxic_name: String,
@@ -141,6 +142,9 @@ pub(super) fn update_toxic_list_in_place(
                 .position(|el| el.get_name() == toxic_name)
                 .ok_or(NotFoundError)?;
             toxics.remove(index);
+        }
+        ToxicEventKind::ToxicRemoveAll => {
+            toxics.clear();
         }
     }
     Ok(())
