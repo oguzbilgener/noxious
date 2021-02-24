@@ -1,5 +1,5 @@
 use std::default::Default;
-use tokio::net::TcpListener;
+use std::net::SocketAddr;
 use tokio::signal;
 
 mod api;
@@ -28,21 +28,14 @@ impl Default for Args {
 
 #[tokio::main]
 async fn main() {
-    let host = "localhost";
-    let port = "1234";
-    // TODO: clean up errors
-    let listener = TcpListener::bind(&format!("{}:{}", host, port))
-        .await
-        .expect("failed to bind");
 
     // TODO: parse the json file, deserialize all toxics, start the core server
 
     // TODO: harmonious shutdown handling
-    noxious::run(Vec::new(), signal::ctrl_c())
-        .await
-        .expect("uh?");
+    // noxious::run(Vec::new(), signal::ctrl_c())
+    //     .await
+    //     .expect("uh?");
 
-    api::run_server(listener, signal::ctrl_c())
-        .await
-        .expect("failed?");
+    api::serve(SocketAddr::new([127, 0, 0, 1].into(), 1234), signal::ctrl_c())
+        .await;
 }

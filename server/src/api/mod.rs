@@ -1,23 +1,26 @@
-use std::future::Future;
-use std::io;
-use tokio::net::TcpListener;
+use std::{future::Future, net::SocketAddr};
+use warp::{Filter, Rejection, Reply};
 
 // rest api
+mod filters;
+mod handlers;
 
-pub async fn run_server(listener: TcpListener, shutdown: impl Future) -> io::Result<()> {
-    Ok(())
+fn make_filters() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    use filters::*;
+
+    disallow_browsers()
+        .or(reset().or(populate()).or(version()))
+        .or(get_proxies().or(create_proxy().or(get_proxy())))
+        .or(update_proxy().or(delete_proxy()))
+        .or(get_toxics().or(create_toxics()))
+        .or(get_toxic().or(delete_toxic()))
 }
 
-// Endpoints to implement:
-// - POST /reset
-// - GET /proxies
-// - POST /proxies
-// - POST /populate
-// - GET /proxies/{proxy}
-// - POST /proxies/{proxy}
-// - DELETE /proxies/{proxy}
-// - GET /proxies/{proxy}/toxics
-// - POST /proxies/{proxy}/toxics
-// - GET /proxies/{proxy}/toxics/{toxic}
-// - POST /proxies/{proxy}/toxics/{toxic}
-// - DELETE /proxies/{proxy}/toxics/{toxic}
+pub async fn serve(addr: SocketAddr, shutdown: impl Future) {
+    let api = make_filters();
+    let routes = api.with(warp::log("noxious"));
+    tokio::select! {
+        _ = warp::serve(routes).run(addr) => {},
+        _ = shutdown => {},
+    };
+}
