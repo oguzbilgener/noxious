@@ -7,9 +7,9 @@ use crate::{
     toxic::{update_toxic_list_in_place, StreamDirection, Toxic, ToxicEvent},
 };
 use futures::{stream, StreamExt};
+use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
-use std::{collections::HashMap, sync::MutexGuard};
+use std::sync::Arc;
 use std::{io, mem};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
@@ -114,7 +114,10 @@ pub(crate) async fn run_proxy(
             }
         }
     }
-    Ok(SharedProxyInfo { state, config })
+    Ok(SharedProxyInfo {
+        state,
+        config: Arc::new(config),
+    })
 }
 
 fn create_links(

@@ -27,6 +27,15 @@ pub struct ProxyStateInner {
     pub toxics: Toxics,
 }
 
+/// TODO
+#[derive(Debug, Clone)]
+pub struct SharedProxyInfo {
+    /// TODO
+    pub state: Arc<ProxyState>,
+    /// TODO
+    pub config: Arc<ProxyConfig>,
+}
+
 impl ProxyState {
     pub(crate) fn new(toxics: Toxics) -> Self {
         ProxyState {
@@ -41,15 +50,6 @@ impl ProxyState {
     pub fn lock(&self) -> MutexGuard<ProxyStateInner> {
         self.inner.lock().expect("ProxyState poisoned")
     }
-}
-
-/// TODO
-#[derive(Debug, Clone)]
-pub struct SharedProxyInfo {
-    /// TODO
-    pub state: Arc<ProxyState>,
-    /// TODO
-    pub config: ProxyConfig,
 }
 
 #[derive(Debug, PartialEq)]

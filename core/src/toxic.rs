@@ -77,12 +77,14 @@ impl PartialEq for Toxic {
 }
 
 impl Toxic {
+    /// TODO
     pub fn get_name(&self) -> &str {
         &self.name
     }
 }
 
 impl ToxicEvent {
+    /// TODO
     pub fn new(
         proxy_name: &str,
         direction: StreamDirection,

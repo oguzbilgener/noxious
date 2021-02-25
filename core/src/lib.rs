@@ -21,9 +21,6 @@
 
 //! # noxious
 
-#[macro_use]
-extern crate serde_derive;
-
 pub mod error;
 mod link;
 mod proxy;

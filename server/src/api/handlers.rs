@@ -17,7 +17,7 @@ use warp::{Filter, Rejection, Reply};
 // }
 
 pub async fn reset_state(store: Store) -> Result<impl Reply, Infallible> {
-    if let Err(err) = store.reset_state() {
+    if let Err(err) = store.reset_state().await {
         warn!(
             err = ?err,
             "ResetState: Failed to write headers to client"
@@ -26,9 +26,13 @@ pub async fn reset_state(store: Store) -> Result<impl Reply, Infallible> {
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn populate(store: Store) -> Result<impl Reply, Infallible> {
+pub async fn populate(store: Store) -> Result<Box<dyn Reply>, Infallible> {
     // TODO: return list of serializable toxics
-    Ok(StatusCode::NO_CONTENT)
+    if let Err(err) = store.populate().await {
+        responses::respond_with_error(err, StatusCode::INTERNAL_SERVER_ERROR)
+    } else {
+        Ok(Box::new(StatusCode::NO_CONTENT))
+    }
 }
 
 pub async fn get_proxies(store: Store) -> Result<impl Reply, Infallible> {
@@ -106,13 +110,15 @@ mod responses {
 
     use super::*;
 
-    fn respond_with_data(data: impl Serialize) -> Result<impl Reply, Infallible> {
-        let body = json!({ "data": data });
-        Ok(with_status(json_reply(&body), StatusCode::OK))
+    pub fn respond_with_data(data: impl Serialize) -> Result<impl Reply, Infallible> {
+        Ok(with_status(json_reply(&data), StatusCode::OK))
     }
 
-    fn respond_with_error(data: impl Error, status: StatusCode) -> Result<impl Reply, Infallible> {
+    pub fn respond_with_error(
+        data: anyhow::Error,
+        status: StatusCode,
+    ) -> Result<Box<dyn Reply>, Infallible> {
         let body = json!({ "message": data.to_string() });
-        Ok(with_status(json_reply(&body), status))
+        Ok(Box::new(with_status(json_reply(&body), status)))
     }
 }

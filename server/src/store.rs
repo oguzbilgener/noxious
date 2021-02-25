@@ -41,12 +41,12 @@ impl Store {
     }
 
     #[instrument]
-    pub fn reset_state(&self) -> Result<(), Box<dyn Error>> {
+    pub async fn reset_state(&self) -> anyhow::Result<()> {
         todo!()
     }
 
     #[instrument]
-    pub fn populate(&self) -> Result<(), Box<dyn Error>> {
+    pub async fn populate(&self) -> anyhow::Result<Vec<SerializableToxic>> {
         // TODO: parse the json file, deserialize all toxics, start proxy tasks
         todo!()
     }
