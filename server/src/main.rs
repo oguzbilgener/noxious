@@ -4,6 +4,7 @@ use noxious::{ToxicEvent, ToxicEventKind};
 use std::default::Default;
 use std::net::SocketAddr;
 use tokio::signal;
+use crate::store::{Store, ProxyEvent, ProxyEventResult};
 use tracing::{debug, instrument};
 
 mod api;
@@ -37,9 +38,14 @@ impl Default for Args {
 async fn main() {
     util::init_tracing();
 
-    let (sender, receiver) = bmrng::channel::<ToxicEvent, Result<(), NotFoundError>>(1);
+    let (sender, receiver) = bmrng::channel::<ProxyEvent, ProxyEventResult>(16);
 
-    // TODO: parse the json file, deserialize all toxics, start the core server
+    let store = Store::new(sender);
+
+    // TODO: parse the json file, deserialize all toxics, start proxy tasks
+    store.populate();
+
+
 
     // TODO: harmonious shutdown handling
     // noxious::run(Vec::new(), signal::ctrl_c())
@@ -48,7 +54,7 @@ async fn main() {
 
     api::serve(
         SocketAddr::new([127, 0, 0, 1].into(), 8474),
-        todo!(),
+        store,
         signal::ctrl_c(),
     )
     .await;
