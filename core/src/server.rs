@@ -23,13 +23,17 @@ pub async fn run(initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<(
 
     let (event_tx, event_rx) = mpsc::channel::<ToxicEvent>(16);
 
-    // tokio::spawn(async move {
-    //     if let Err(err) = run_proxy(proxy_config, event_rx, initial_toxics, stop).await {
-    //         println!("run proxy err");
-    //         dbg!(err);
-    //     }
-    //     println!("proxy finished");
-    // });
+    let it = Toxics {
+        upstream: Vec::new(),
+        downstream: Vec::new(),
+    };
+    tokio::spawn(async move {
+        if let Err(err) = run_proxy(proxy_config, event_rx, it, stop).await {
+            println!("run proxy err");
+            dbg!(err);
+        }
+        println!("proxy finished");
+    });
 
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;

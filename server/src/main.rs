@@ -6,11 +6,11 @@ use std::net::SocketAddr;
 use tokio::signal;
 use tracing::{debug, instrument};
 
-type Sender = RequestSender<ToxicEvent, Result<(), NotFoundError>>;
-
 mod api;
 mod util;
+mod store;
 
+/// The command line arguments for the server
 struct Args {
     /// The host to listen on for the API server
     host: &'static str,
@@ -48,7 +48,7 @@ async fn main() {
 
     api::serve(
         SocketAddr::new([127, 0, 0, 1].into(), 8474),
-        sender,
+        todo!(),
         signal::ctrl_c(),
     )
     .await;

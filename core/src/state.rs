@@ -1,14 +1,56 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    net::SocketAddr,
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{
-    proxy::Toxics,
+    proxy::{Links, Toxics},
     toxic::{Toxic, ToxicKind},
+    ProxyConfig,
 };
+
+/// TODO
+#[derive(Debug)]
+pub struct ProxyState {
+    inner: Mutex<ProxyStateInner>,
+}
+
+/// TODO
+#[derive(Debug)]
+pub struct ProxyStateInner {
+    /// Socket address -> (Upstream, Downstream)
+    pub clients: HashMap<SocketAddr, Links>,
+    /// The collection of toxics active over upstream and downstream connections
+    pub toxics: Toxics,
+}
+
+impl ProxyState {
+    pub(crate) fn new(toxics: Toxics) -> Self {
+        ProxyState {
+            inner: Mutex::new(ProxyStateInner {
+                clients: HashMap::new(),
+                toxics,
+            }),
+        }
+    }
+
+    /// TODO
+    pub fn lock(&self) -> MutexGuard<ProxyStateInner> {
+        self.inner.lock().expect("ProxyState poisoned")
+    }
+}
+
+/// TODO
+#[derive(Debug, Clone)]
+pub struct SharedProxyInfo {
+    /// TODO
+    pub state: Arc<ProxyState>,
+    /// TODO
+    pub config: ProxyConfig,
+}
 
 #[derive(Debug, PartialEq)]
 pub enum ToxicState {

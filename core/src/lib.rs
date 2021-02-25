@@ -35,7 +35,9 @@ mod toxic;
 mod toxics;
 
 pub use server::run;
-pub use toxic::{ToxicEvent, ToxicEventKind};
+pub use toxic::{Toxic, ToxicEvent, ToxicEventKind};
+pub use proxy::{ProxyConfig, Toxics};
+pub use state::{ProxyState, ProxyStateInner, SharedProxyInfo};
 
 #[cfg(test)]
 mod tests {

@@ -2,14 +2,14 @@ use crate::{
     error::NotFoundError,
     link::Link,
     signal::Stop,
-    state::ToxicStateHolder,
+    state::{ProxyState, SharedProxyInfo, ToxicStateHolder},
     stream::{Read, Write},
     toxic::{update_toxic_list_in_place, StreamDirection, Toxic, ToxicEvent},
 };
 use futures::{stream, StreamExt};
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::{collections::HashMap, sync::MutexGuard};
 use std::{io, mem};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
@@ -18,8 +18,9 @@ use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 /// The default Go io.Copy buffer size is 32K, so also use 32K buffers here to imitate Toxiproxy.
 const READ_BUFFER_SIZE: usize = 32768;
 
+/// The immutable configuration for a proxy
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ProxyConfig {
+pub struct ProxyConfig {
     /// An arbitrary name
     pub name: String,
     /// The host name and the port the proxy listens on, like 127.0.0.1:5431
@@ -39,17 +40,13 @@ pub struct Links {
     state_holder: Option<Arc<ToxicStateHolder>>,
 }
 
+/// Toxics applied on a proxy connection
 #[derive(Debug, Clone)]
-pub(super) struct Toxics {
-    pub(super) upstream: Vec<Toxic>,
-    pub(super) downstream: Vec<Toxic>,
-}
-
-#[derive(Debug)]
-pub struct ProxyState {
-    /// Socket address -> (Upstream, Downstream)
-    clients: HashMap<SocketAddr, Links>,
-    toxics: Toxics,
+pub struct Toxics {
+    /// The toxics applied on the upstream link
+    pub upstream: Vec<Toxic>,
+    /// The toxics applied on the downstream link
+    pub downstream: Vec<Toxic>,
 }
 
 pub(crate) async fn run_proxy(
@@ -57,11 +54,11 @@ pub(crate) async fn run_proxy(
     receiver: mpsc::Receiver<ToxicEvent>,
     initial_toxics: Toxics,
     mut stop: Stop,
-) -> io::Result<()> {
+) -> io::Result<SharedProxyInfo> {
     let listener = TcpListener::bind(&config.listen).await?;
     println!("listening on port {}", &config.listen);
 
-    let state = Arc::new(Mutex::new(ProxyState::new(initial_toxics.clone())));
+    let state = Arc::new(ProxyState::new(initial_toxics.clone()));
 
     tokio::spawn(listen_toxic_events(
         state.clone(),
@@ -93,7 +90,7 @@ pub(crate) async fn run_proxy(
                 FramedRead::with_capacity(upstream_read, BytesCodec::new(), READ_BUFFER_SIZE);
             let upstream_write = FramedWrite::new(upstream_write, BytesCodec::new());
 
-            let toxics = state.lock().expect("ProxyState poisoned").toxics.clone();
+            let toxics = state.lock().toxics.clone();
 
             let res = create_links(
                 state.clone(),
@@ -105,6 +102,7 @@ pub(crate) async fn run_proxy(
                 client_write,
                 upstream_read,
                 upstream_write,
+                None,
             );
             match res {
                 Err(err) => {
@@ -116,11 +114,11 @@ pub(crate) async fn run_proxy(
             }
         }
     }
-    Ok(())
+    Ok(SharedProxyInfo { state, config })
 }
 
 fn create_links(
-    state: Arc<Mutex<ProxyState>>,
+    state: Arc<ProxyState>,
     addr: SocketAddr,
     config: &ProxyConfig,
     stop: &mut Stop,
@@ -129,11 +127,9 @@ fn create_links(
     client_write: Write,
     upstream_read: Read,
     upstream_write: Write,
+    previous_toxic_state_holder: Option<Arc<ToxicStateHolder>>,
 ) -> io::Result<()> {
-    let mut current_state = state.lock().expect(&format!(
-        "ProxyState poisoned for upstream {}",
-        addr.to_string()
-    ));
+    let mut current_state = state.lock();
 
     if current_state.clients.contains_key(&addr) {
         return Err(io::Error::new(
@@ -147,7 +143,8 @@ fn create_links(
 
     let (links_stop, links_stopper) = stop.fork();
 
-    let toxics_state_holder = ToxicStateHolder::for_toxics(&toxics);
+    let toxics_state_holder =
+        previous_toxic_state_holder.or_else(|| ToxicStateHolder::for_toxics(&toxics));
 
     let mut upstream_link = Link::new(
         addr,
@@ -184,7 +181,7 @@ fn create_links(
             down = downstream_handle => down
         };
         links_stopper.stop();
-        let mut state = state.lock().expect("ProxyState poisoned");
+        let mut state = state.lock();
         state.clients.remove(&addr);
         println!("Removed {}", addr);
     });
@@ -200,17 +197,8 @@ fn create_links(
     Ok(())
 }
 
-impl ProxyState {
-    fn new(toxics: Toxics) -> Self {
-        ProxyState {
-            clients: HashMap::new(),
-            toxics,
-        }
-    }
-}
-
 async fn listen_toxic_events(
-    state: Arc<Mutex<ProxyState>>,
+    state: Arc<ProxyState>,
     mut receiver: mpsc::Receiver<ToxicEvent>,
     mut stop: Stop,
     config: ProxyConfig,
@@ -229,13 +217,13 @@ async fn listen_toxic_events(
 }
 
 async fn process_toxic_event(
-    state: Arc<Mutex<ProxyState>>,
+    state: Arc<ProxyState>,
     config: ProxyConfig,
     stop: Stop,
     event: ToxicEvent,
 ) {
     let new_toxics = {
-        let mut current_state = state.lock().expect("ProxyState poisoned");
+        let mut current_state = state.lock();
         if let Err(err) = update_toxics(event, &mut current_state.toxics) {
             // TODO: log this, return a reply to event sender
             println!("toxic not found {}", err);
@@ -244,7 +232,7 @@ async fn process_toxic_event(
     };
 
     let old_map = {
-        let mut current_state = state.lock().expect("ProxyState poisoned for upstream {}");
+        let mut current_state = state.lock();
         mem::replace(&mut current_state.clients, HashMap::new())
     };
 
@@ -267,7 +255,7 @@ async fn process_toxic_event(
 }
 
 async fn recreate_links(
-    state: Arc<Mutex<ProxyState>>,
+    state: Arc<ProxyState>,
     config: &ProxyConfig,
     stop: Stop,
     addr: SocketAddr,
@@ -286,6 +274,7 @@ async fn recreate_links(
         client_write,
         upstream_read,
         upstream_write,
+        links.state_holder,
     )
 }
 

@@ -1,5 +1,5 @@
-use super::Sender;
 use crate::api::handlers;
+use crate::store::Store;
 use std::convert::Infallible;
 use warp::http::header::{CONTENT_TYPE, ORIGIN, USER_AGENT};
 use warp::http::StatusCode;
@@ -10,121 +10,120 @@ use warp::{Filter, Rejection, Reply};
 // }
 
 /// POST /reset
-pub fn reset(sender: Sender) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+pub fn reset(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("reset")
         .and(warp::post())
         .and(util::empty_body())
-        .and(util::add_sender(sender))
+        .and(util::add_store(store))
         .and_then(handlers::reset_state)
 }
 
 /// POST /populate
-pub fn populate(sender: Sender) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+pub fn populate(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("populate")
         .and(warp::post())
-        .and(util::add_sender(sender))
+        .and(util::add_store(store))
         .and_then(handlers::stub)
 }
 
 /// GET /proxies
-pub fn get_proxies(sender: Sender) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+pub fn get_proxies(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("proxies")
         .and(warp::get())
-        .and(util::add_sender(sender))
+        .and(util::add_store(store))
         .and_then(handlers::stub)
 }
 
 /// POST /proxies
-pub fn create_proxy(sender: Sender) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+pub fn create_proxy(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("proxies")
         .and(warp::post())
-        .and(util::add_sender(sender))
+        .and(util::add_store(store))
         .and_then(handlers::stub)
 }
 
 /// GET /proxies/{proxy}
-pub fn get_proxy(sender: Sender) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+pub fn get_proxy(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("proxies")
         .and(warp::path::param())
         .and(warp::get())
-        .and(util::add_sender(sender))
+        .and(util::add_store(store))
         .and_then(handlers::get_proxy)
 }
 
 /// POST /proxies/{proxy}
-pub fn update_proxy(sender: Sender) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+pub fn update_proxy(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     // Note: This is not very RESTful but we're just following the original Toxiproxy API spec.
     warp::path("proxies")
         .and(warp::path::param())
         .and(warp::post())
-        .and(util::add_sender(sender))
+        .and(util::add_store(store))
         .and_then(handlers::get_proxy)
 }
 
 /// DELETE /proxies/{proxy}
-pub fn delete_proxy(sender: Sender) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+pub fn remove_proxy(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("proxies")
         .and(warp::path::param())
         .and(warp::get())
-        .and(util::add_sender(sender))
+        .and(util::add_store(store))
         .and_then(handlers::get_proxy)
 }
 
 /// GET /proxies/{proxy}/toxics
-pub fn get_toxics(sender: Sender) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+pub fn get_toxics(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("proxies")
         .and(warp::path::param())
         .and(warp::get())
-        .and(util::add_sender(sender))
+        .and(util::add_store(store))
         .and_then(handlers::get_proxy)
 }
 
 /// POST /proxies/{proxy}/toxics
-pub fn create_toxics(sender: Sender) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+pub fn create_toxics(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("proxies")
         .and(warp::path::param())
         .and(warp::post())
-        .and(util::add_sender(sender))
+        .and(util::add_store(store))
         .and_then(handlers::get_proxy)
 }
 
 /// GET /proxies/{proxy}/toxics/{toxic}
-pub fn get_toxic(sender: Sender) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+pub fn get_toxic(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("proxies")
         .and(warp::path::param())
         .and(warp::path("toxics"))
         .and(warp::path::param())
         .and(warp::get())
-        .and(util::add_sender(sender))
+        .and(util::add_store(store))
         .and_then(handlers::get_toxic)
 }
 
 /// POST /proxies/{proxy}/toxics/{toxic}
-pub fn update_toxic(sender: Sender) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+pub fn update_toxic(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("proxies")
         .and(warp::path::param())
         .and(warp::path("toxics"))
         .and(warp::path::param())
         .and(warp::post())
-        .and(util::add_sender(sender))
+        .and(util::add_store(store))
         .and_then(handlers::get_toxic)
 }
 
 /// DELETE /proxies/{proxy}/toxics/{toxic}
-pub fn delete_toxic(sender: Sender) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+pub fn remove_toxic(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("proxies")
         .and(warp::path::param())
         .and(warp::path("toxics"))
         .and(warp::path::param())
         .and(warp::post())
-        .and(util::add_sender(sender))
+        .and(util::add_store(store))
         .and_then(handlers::get_toxic)
 }
 /// GET /version
 
 pub fn version() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path("version")
-        .and_then(handlers::get_version)
+    warp::path("version").and_then(handlers::get_version)
 }
 
 pub fn disallow_browsers() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
@@ -148,9 +147,9 @@ pub(crate) mod util {
         warp::body::content_length_limit(0)
     }
 
-    pub(super) fn add_sender(
-        sender: Sender,
-    ) -> impl Filter<Extract = (Sender,), Error = Infallible> + Clone {
-        warp::any().map(move || sender.clone())
+    pub(super) fn add_store(
+        store: Store,
+    ) -> impl Filter<Extract = (Store,), Error = Infallible> + Clone {
+        warp::any().map(move || store.clone())
     }
 }
