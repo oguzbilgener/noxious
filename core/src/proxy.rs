@@ -7,6 +7,7 @@ use crate::{
     toxic::{update_toxic_list_in_place, StreamDirection, Toxic, ToxicEvent},
 };
 use futures::{stream, StreamExt};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -19,7 +20,7 @@ use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 const READ_BUFFER_SIZE: usize = 32768;
 
 /// The immutable configuration for a proxy
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProxyConfig {
     /// An arbitrary name
     pub name: String,
@@ -27,8 +28,17 @@ pub struct ProxyConfig {
     pub listen: String,
     /// The host name and the port the proxy connects to, like 127.0.0:5432
     pub upstream: String,
-    /// A random seed
+    /// The client can set the enabled field to false to stop this proxy.
+    /// Proxies are enabled by default
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    /// A random seed. Not exposed in the API
+    #[serde(skip)]
     pub rand_seed: Option<u64>,
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 #[derive(Debug)]

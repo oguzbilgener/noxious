@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     error::Error,
@@ -46,18 +47,23 @@ impl Store {
     }
 
     #[instrument]
-    pub async fn populate(&self) -> anyhow::Result<Vec<SerializableToxic>> {
+    pub async fn populate(&self, input: Vec<ProxyConfig>) -> anyhow::Result<Vec<ProxyWithToxics>> {
         // TODO: parse the json file, deserialize all toxics, start proxy tasks
         todo!()
     }
 
     #[instrument]
-    pub fn get_proxy(name: &str) -> Result<SharedProxyInfo, NotFoundError> {
+    pub async fn get_proxies(&self) -> anyhow::Result<Vec<ProxyWithToxics>> {
         todo!()
     }
 
     #[instrument]
-    pub fn get_toxic(name: &str) -> Result<SerializableToxic, NotFoundError> {
+    pub fn get_proxy(&self, name: &str) -> Result<SharedProxyInfo, NotFoundError> {
+        todo!()
+    }
+
+    #[instrument]
+    pub fn get_toxic(&self, name: &str) -> Result<SerializableToxic, NotFoundError> {
         todo!()
     }
 }
@@ -70,9 +76,9 @@ impl Shared {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SerializableToxic {
-    name: String,
+    pub name: String,
 }
 
 impl From<SerializableToxic> for Toxic {
@@ -85,4 +91,10 @@ impl From<Toxic> for SerializableToxic {
     fn from(_: Toxic) -> Self {
         todo!()
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProxyWithToxics {
+    pub proxy: ProxyConfig,
+    pub toxics: Vec<SerializableToxic>,
 }

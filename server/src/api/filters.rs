@@ -22,6 +22,7 @@ pub fn reset(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejectio
 pub fn populate(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("populate")
         .and(warp::post())
+        .and(util::parse_body())
         .and(util::add_store(store))
         .and_then(handlers::populate)
 }
@@ -38,6 +39,7 @@ pub fn get_proxies(store: Store) -> impl Filter<Extract = impl Reply, Error = Re
 pub fn create_proxy(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("proxies")
         .and(warp::post())
+        .and(util::parse_body())
         .and(util::add_store(store))
         .and_then(handlers::create_proxy)
 }
@@ -142,9 +144,17 @@ pub fn disallow_browsers() -> impl Filter<Extract = impl Reply, Error = Rejectio
 }
 
 pub(crate) mod util {
+    use serde::de::DeserializeOwned;
+
     use super::*;
     pub(super) fn empty_body() -> impl Filter<Extract = (), Error = Rejection> + Clone {
         warp::body::content_length_limit(0)
+    }
+
+    pub(super) fn parse_body<T: DeserializeOwned + Send>(
+    ) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
+        // Body size up to 64 KB
+        warp::body::content_length_limit(1024 * 64).and(warp::body::json::<T>())
     }
 
     pub(super) fn add_store(

@@ -1,15 +1,15 @@
+use crate::store::{ProxyEvent, ProxyEventResult, Store};
 use bmrng::{channel, RequestSender};
 use noxious::error::NotFoundError;
 use noxious::{ToxicEvent, ToxicEventKind};
 use std::default::Default;
 use std::net::SocketAddr;
 use tokio::signal;
-use crate::store::{Store, ProxyEvent, ProxyEventResult};
 use tracing::{debug, instrument};
 
 mod api;
-mod util;
 mod store;
+mod util;
 
 /// The command line arguments for the server
 struct Args {
@@ -43,9 +43,7 @@ async fn main() {
     let store = Store::new(sender);
 
     // TODO: parse the json file, deserialize all toxics, start proxy tasks
-    store.populate();
-
-
+    store.populate(Vec::new()).await;
 
     // TODO: harmonious shutdown handling
     // noxious::run(Vec::new(), signal::ctrl_c())

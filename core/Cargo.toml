@@ -8,8 +8,7 @@ edition = "2018"
 tokio = { version = "1", features = ["net", "sync", "signal", "io-util", "rt", "macros", "time"] }
 rand = { version = "0.8.3", features = ["std_rng"] }
 bytes = "1.0.1"
-serde = "^1.0.123"
-serde_derive = "^1.0.123"
+serde = { version = "^1.0.123", features = ["derive"] }
 # TODO: remove unused dependencies
 tokio-util = { version = "0.6.3", features = ["codec"] }
 thiserror = "1.0.23"

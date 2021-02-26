@@ -16,6 +16,7 @@ pub async fn run(initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<(
         name: "mongo".to_owned(),
         listen: "127.0.0.1:27016".to_owned(),
         upstream: "127.0.0.1:27017".to_owned(),
+        enabled: true,
         rand_seed: None,
     };
 

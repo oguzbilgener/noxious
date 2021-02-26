@@ -1,20 +1,12 @@
-use std::convert::Infallible;
-use warp::http::StatusCode;
-// use serde_derive::{Deserialize, Serialize};
 use crate::store::Store;
 use crate::util;
-use bmrng::RequestSender;
-use noxious::error::NotFoundError;
-use noxious::{ToxicEvent, ToxicEventKind};
+use noxious::ProxyConfig;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
+use std::convert::Infallible;
 use tracing::warn;
-use warp::{Filter, Rejection, Reply};
-
-// #[derive(Serialize)]
-// struct ErrorMessage {
-//     code: u16,
-//     message: String,
-// }
+use warp::http::StatusCode;
+use warp::{reply::Response, Reply};
 
 pub async fn reset_state(store: Store) -> Result<impl Reply, Infallible> {
     if let Err(err) = store.reset_state().await {
@@ -26,21 +18,40 @@ pub async fn reset_state(store: Store) -> Result<impl Reply, Infallible> {
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn populate(store: Store) -> Result<Box<dyn Reply>, Infallible> {
-    // TODO: return list of serializable toxics
-    if let Err(err) = store.populate().await {
-        responses::respond_with_error(err, StatusCode::INTERNAL_SERVER_ERROR)
-    } else {
-        Ok(Box::new(StatusCode::NO_CONTENT))
+/// Re-populate the toxics from the initial config, return a map of proxies with toxics
+pub async fn populate(configs: Vec<ProxyConfig>, store: Store) -> Result<impl Reply, Infallible> {
+    match store.populate(configs).await {
+        Ok(proxy_map) => Ok(warp::reply::json(&proxy_map).into_response()),
+        Err(err) => Ok(responses::response_with_error(
+            err,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )),
     }
 }
 
+/// Get a key-value map of all proxies and their toxics in the system
 pub async fn get_proxies(store: Store) -> Result<impl Reply, Infallible> {
-    // TODO: return a list of proxies
-    Ok(StatusCode::NO_CONTENT)
+    let result = store.get_proxies().await.and_then(|pairs| {
+        let maybe_map: Result<serde_json::Map<String, JsonValue>, anyhow::Error> = pairs
+            .into_iter()
+            .try_fold(serde_json::Map::new(), |mut acc, pair| {
+                let key = pair.proxy.name.clone();
+                let value = serde_json::to_value(pair)?;
+                acc.insert(key, value);
+                Ok(acc)
+            });
+        maybe_map
+    });
+    match result {
+        Ok(proxy_map) => Ok(warp::reply::json(&proxy_map).into_response()),
+        Err(err) => Ok(responses::response_with_error(
+            err,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )),
+    }
 }
 
-pub async fn create_proxy(store: Store) -> Result<impl Reply, Infallible> {
+pub async fn create_proxy(proxy: ProxyConfig, store: Store) -> Result<impl Reply, Infallible> {
     // TODO: return the proxy
     Ok(StatusCode::NO_CONTENT)
 }
@@ -114,11 +125,8 @@ mod responses {
         Ok(with_status(json_reply(&data), StatusCode::OK))
     }
 
-    pub fn respond_with_error(
-        data: anyhow::Error,
-        status: StatusCode,
-    ) -> Result<Box<dyn Reply>, Infallible> {
+    pub fn response_with_error(data: anyhow::Error, status: StatusCode) -> Response {
         let body = json!({ "message": data.to_string() });
-        Ok(Box::new(with_status(json_reply(&body), status)))
+        with_status(json_reply(&body), status).into_response()
     }
 }
