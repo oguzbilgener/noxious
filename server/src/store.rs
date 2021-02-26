@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use crate::error::StoreError;
 use bmrng::{channel, RequestSender};
 use noxious::{error::NotFoundError, SharedProxyInfo, Toxic};
 use noxious::{ProxyConfig, ToxicEvent, ToxicEventKind, Toxics};
@@ -33,6 +34,8 @@ pub struct Store {
     sender: RequestSender<ProxyEvent, ProxyEventResult>,
 }
 
+type Result<T> = core::result::Result<T, StoreError>;
+
 impl Store {
     pub fn new(sender: RequestSender<ProxyEvent, ProxyEventResult>) -> Self {
         Store {
@@ -42,28 +45,67 @@ impl Store {
     }
 
     #[instrument]
-    pub async fn reset_state(&self) -> anyhow::Result<()> {
+    pub async fn reset_state(&self) -> Result<()> {
         todo!()
     }
 
     #[instrument]
-    pub async fn populate(&self, input: Vec<ProxyConfig>) -> anyhow::Result<Vec<ProxyWithToxics>> {
+    pub async fn populate(&self, input: Vec<ProxyConfig>) -> Result<Vec<ProxyWithToxics>> {
         // TODO: parse the json file, deserialize all toxics, start proxy tasks
         todo!()
     }
 
     #[instrument]
-    pub async fn get_proxies(&self) -> anyhow::Result<Vec<ProxyWithToxics>> {
+    pub async fn get_proxies(&self) -> Result<Vec<ProxyWithToxics>> {
         todo!()
     }
 
     #[instrument]
-    pub fn get_proxy(&self, name: &str) -> Result<SharedProxyInfo, NotFoundError> {
+    pub async fn create_proxy(&self, proxy: ProxyConfig) -> Result<ProxyWithToxics> {
         todo!()
     }
 
     #[instrument]
-    pub fn get_toxic(&self, name: &str) -> Result<SerializableToxic, NotFoundError> {
+    pub async fn get_proxy(&self, name: String) -> Result<ProxyWithToxics> {
+        todo!()
+    }
+
+    #[instrument]
+    pub async fn update_proxy(&self, name: String, new_config: ProxyConfig) -> Result<ProxyWithToxics> {
+        todo!()
+    }
+
+    #[instrument]
+    pub async fn remove_proxy(&self, name: String) -> Result<()> {
+        todo!()
+    }
+
+    #[instrument]
+    pub async fn create_toxic(&self, proxy_name: String, toxic: SerializableToxic) -> Result<ProxyWithToxics> {
+        todo!()
+    }
+
+    #[instrument]
+    pub async fn get_toxics(&self, proxy_name: String) -> Result<Vec<Toxic>> {
+        todo!()
+    }
+
+    #[instrument]
+    pub async fn get_toxic(
+        &self,
+        proxy_name: String,
+        toxic_name: String,
+    ) -> Result<SerializableToxic> {
+        todo!()
+    }
+
+    #[instrument]
+    pub async fn update_toxic(&self, proxy_name: String, toxic_name: String, toxic: SerializableToxic) -> Result<ProxyWithToxics> {
+        todo!()
+    }
+
+    #[instrument]
+    pub async fn remove_toxic(&self, proxy_name: String, toxic_name: String) -> Result<ProxyWithToxics> {
         todo!()
     }
 }

@@ -5,10 +5,6 @@ use warp::http::header::USER_AGENT;
 use warp::http::StatusCode;
 use warp::{Filter, Rejection, Reply};
 
-// pub fn proxies() -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-//     todo!()
-// }
-
 /// POST /reset
 pub fn reset(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path("reset")

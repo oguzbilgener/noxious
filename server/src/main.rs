@@ -10,6 +10,7 @@ use tracing::{debug, instrument};
 mod api;
 mod store;
 mod util;
+mod error;
 
 /// The command line arguments for the server
 struct Args {

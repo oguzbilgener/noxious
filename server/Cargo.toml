@@ -16,4 +16,5 @@ tracing-opentelemetry = "0.11.0"
 log = "0.4.14"
 pretty_env_logger = "0.4.0"
 bmrng = "0.4.0"
-anyhow = "1.0.38"
+thiserror = "1.0.24"
+
