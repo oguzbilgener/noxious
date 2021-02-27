@@ -1,6 +1,7 @@
-use crate::util;
 use crate::{error::StoreError, store::Store};
+use crate::{store::SerializableToxic, util};
 use noxious::ProxyConfig;
+use responses::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::convert::Infallible;
@@ -21,7 +22,7 @@ pub async fn reset_state(store: Store) -> Result<impl Reply, Infallible> {
 
 /// Re-populate the toxics from the initial config, return a map of proxies with toxics
 pub async fn populate(configs: Vec<ProxyConfig>, store: Store) -> Result<impl Reply, Infallible> {
-    responses::wrap_store_result(async move { store.populate(configs).await }).await
+    wrap_store_result(async move { store.populate(configs).await }).await
 }
 
 /// Get a key-value map of all proxies and their toxics in the system
@@ -37,37 +38,40 @@ pub async fn get_proxies(store: Store) -> Result<impl Reply, Infallible> {
             });
         maybe_map.map_err(|_| StoreError::Other)
     });
-    responses::use_store_result(result)
+    use_store_result(result)
 }
 
 /// Create a proxy, return it if successful
 pub async fn create_proxy(proxy: ProxyConfig, store: Store) -> Result<impl Reply, Infallible> {
-    responses::wrap_store_result(async move { store.create_proxy(proxy).await }).await
+    wrap_store_result(async move { store.create_proxy(proxy).await }).await
 }
 
 pub async fn get_proxy(name: String, store: Store) -> Result<impl Reply, Infallible> {
-    // TODO: return the proxy or 404
-    Ok(StatusCode::NO_CONTENT)
+    wrap_store_result(async move { store.get_proxy(name).await }).await
 }
 
-pub async fn update_proxy(name: String, store: Store) -> Result<impl Reply, Infallible> {
-    // TODO: implement
-    Ok(StatusCode::NO_CONTENT)
+pub async fn update_proxy(
+    name: String,
+    new_proxy: ProxyConfig,
+    store: Store,
+) -> Result<impl Reply, Infallible> {
+    wrap_store_result(async move { store.update_proxy(name, new_proxy).await }).await
 }
 
 pub async fn remove_proxy(name: String, store: Store) -> Result<impl Reply, Infallible> {
-    // TODO: implement
-    Ok(StatusCode::NO_CONTENT)
+    wrap_store_result_no_content(async move { store.remove_proxy(name).await }).await
 }
 
-pub async fn create_toxic(name: String, store: Store) -> Result<impl Reply, Infallible> {
-    // TODO: implement
-    Ok(StatusCode::NO_CONTENT)
+pub async fn get_toxics(proxy_name: String, store: Store) -> Result<impl Reply, Infallible> {
+    wrap_store_result(async move { store.get_toxics(proxy_name).await }).await
 }
 
-pub async fn get_toxics(name: String, store: Store) -> Result<impl Reply, Infallible> {
-    // TODO: implement
-    Ok(StatusCode::NO_CONTENT)
+pub async fn create_toxic(
+    proxy_name: String,
+    toxic: SerializableToxic,
+    store: Store,
+) -> Result<impl Reply, Infallible> {
+    wrap_store_result(async move { store.create_toxic(proxy_name, toxic).await }).await
 }
 
 pub async fn get_toxic(
@@ -75,16 +79,17 @@ pub async fn get_toxic(
     toxic_name: String,
     store: Store,
 ) -> Result<impl Reply, Infallible> {
-    responses::wrap_store_result(async move { store.get_toxic(proxy_name, toxic_name).await }).await
+    wrap_store_result(async move { store.get_toxic(proxy_name, toxic_name).await }).await
 }
 
 pub async fn update_toxic(
     proxy_name: String,
     toxic_name: String,
+    new_toxic: SerializableToxic,
     store: Store,
 ) -> Result<impl Reply, Infallible> {
-    // TODO: implement
-    Ok(StatusCode::NO_CONTENT)
+    wrap_store_result(async move { store.update_toxic(proxy_name, toxic_name, new_toxic).await })
+        .await
 }
 
 pub async fn remove_toxic(
@@ -92,8 +97,8 @@ pub async fn remove_toxic(
     toxic_name: String,
     store: Store,
 ) -> Result<impl Reply, Infallible> {
-    // TODO: implement
-    Ok(StatusCode::NO_CONTENT)
+    wrap_store_result_no_content(async move { store.remove_toxic(proxy_name, toxic_name).await })
+        .await
 }
 
 pub async fn get_version() -> Result<impl Reply, Infallible> {
@@ -111,27 +116,16 @@ mod responses {
 
     use super::*;
 
-    pub fn respond_with_data(data: impl Serialize) -> Result<impl Reply, Infallible> {
-        Ok(with_status(json_reply(&data), StatusCode::OK))
-    }
-
-    pub fn response_with_error(data: StoreError, status: StatusCode) -> Response {
-        let body = json!({ "message": data.to_string() });
-        with_status(json_reply(&body), status).into_response()
-    }
-
     pub async fn wrap_store_result(
         f: impl Future<Output = Result<impl Serialize, StoreError>>,
     ) -> Result<impl Reply, Infallible> {
         use_store_result(f.await)
     }
 
-    pub fn wrap_store_result_sync<F, S>(f: F) -> Result<impl Reply, Infallible>
-    where
-        F: FnOnce() -> Result<S, StoreError>,
-        S: Serialize,
-    {
-        use_store_result(f())
+    pub async fn wrap_store_result_no_content(
+        f: impl Future<Output = Result<(), StoreError>>,
+    ) -> Result<impl Reply, Infallible> {
+        use_store_result_no_content(f.await)
     }
 
     pub fn use_store_result(
@@ -139,6 +133,15 @@ mod responses {
     ) -> Result<impl Reply, Infallible> {
         match result {
             Ok(data) => Ok(with_status(json_reply(&data), StatusCode::OK).into_response()),
+            Err(err) => Ok(Into::<StatusCode>::into(err).into_response()),
+        }
+    }
+
+    pub fn use_store_result_no_content(
+        result: Result<(), StoreError>,
+    ) -> Result<impl Reply, Infallible> {
+        match result {
+            Ok(data) => Ok(StatusCode::NO_CONTENT.into_response()),
             Err(err) => Ok(Into::<StatusCode>::into(err).into_response()),
         }
     }

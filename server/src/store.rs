@@ -86,7 +86,7 @@ impl Store {
     }
 
     #[instrument]
-    pub async fn get_toxics(&self, proxy_name: String) -> Result<Vec<Toxic>> {
+    pub async fn get_toxics(&self, proxy_name: String) -> Result<Vec<SerializableToxic>> {
         todo!()
     }
 
@@ -105,7 +105,7 @@ impl Store {
     }
 
     #[instrument]
-    pub async fn remove_toxic(&self, proxy_name: String, toxic_name: String) -> Result<ProxyWithToxics> {
+    pub async fn remove_toxic(&self, proxy_name: String, toxic_name: String) -> Result<()> {
         todo!()
     }
 }
