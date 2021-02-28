@@ -7,9 +7,8 @@ use std::{
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{
-    proxy::{Links, Toxics},
+    proxy::{Links, ProxyConfig, Toxics},
     toxic::{Toxic, ToxicKind},
-    ProxyConfig,
 };
 
 /// TODO
@@ -27,12 +26,13 @@ pub struct ProxyStateInner {
     pub toxics: Toxics,
 }
 
-/// TODO
+/// The proxy config and state to allow the API server read from it.
+/// The config is immutable, but the state is behind a mutex.
 #[derive(Debug, Clone)]
 pub struct SharedProxyInfo {
-    /// TODO
+    /// The current proxy state containing the current collection of toxics and the connected clients
     pub state: Arc<ProxyState>,
-    /// TODO
+    /// The immutable essential proxy config, like the proxy name, upstream and downstream addresses
     pub config: Arc<ProxyConfig>,
 }
 
@@ -46,18 +46,20 @@ impl ProxyState {
         }
     }
 
-    /// TODO
+    /// Get the inner state, or panic if the lock is poisoned
     pub fn lock(&self) -> MutexGuard<ProxyStateInner> {
         self.inner.lock().expect("ProxyState poisoned")
     }
 }
 
+/// The state for stateful toxics
 #[derive(Debug, PartialEq)]
 pub enum ToxicState {
     LimitData { bytes_transmitted: usize },
 }
 
 impl ToxicState {
+    /// Initialize a ToxicState for the ToxicKind, if the ToxicKind is stateful
     pub fn for_toxic_kind(kind: &ToxicKind) -> Option<ToxicState> {
         match kind {
             ToxicKind::LimitData { .. } => Some(ToxicState::LimitData {

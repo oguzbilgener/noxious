@@ -1,6 +1,9 @@
-use crate::{error::StoreError, store::Store};
-use crate::{store::SerializableToxic, util};
-use noxious::ProxyConfig;
+use crate::{
+    error::StoreError,
+    store::{SerializableToxic, Store},
+    util,
+};
+use noxious::proxy::ProxyConfig;
 use responses::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -10,6 +13,7 @@ use tracing::warn;
 use warp::http::StatusCode;
 use warp::{reply::Response, Reply};
 
+/// Remove all toxics from all proxies
 pub async fn reset_state(store: Store) -> Result<impl Reply, Infallible> {
     if let Err(err) = store.reset_state().await {
         warn!(

@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 tokio = { version = "1", features = ["macros", "sync", "net", "rt-multi-thread", "signal"] }
+futures = { version = "0.3.12" }
 noxious = { path = "../core" }
 serde_json = "^1.0.62"
 serde = { version = "^1.0.123", features = ["derive"] }

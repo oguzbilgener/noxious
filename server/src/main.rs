@@ -1,16 +1,16 @@
 use crate::store::{ProxyEvent, ProxyEventResult, Store};
 use bmrng::{channel, RequestSender};
 use noxious::error::NotFoundError;
-use noxious::{ToxicEvent, ToxicEventKind};
+use noxious::toxic::{ToxicEvent, ToxicEventKind};
 use std::default::Default;
 use std::net::SocketAddr;
 use tokio::signal;
 use tracing::{debug, instrument};
 
 mod api;
+mod error;
 mod store;
 mod util;
-mod error;
 
 /// The command line arguments for the server
 struct Args {

@@ -1,15 +1,17 @@
 use thiserror::Error;
 use tokio::sync::{broadcast, watch};
 
+/// TODO
 #[derive(Debug)]
-pub(crate) struct Stop {
+pub struct Stop {
     stopped: bool,
     receiver: broadcast::Receiver<()>,
     sender: broadcast::Sender<()>,
 }
 
 impl Stop {
-    pub(crate) fn new() -> (Stop, Stopper) {
+    /// TODO
+    pub fn new() -> (Stop, Stopper) {
         let (sender, receiver) = broadcast::channel::<()>(1);
         let stopper = Stopper::new(sender.clone());
         let stop = Stop {
@@ -50,6 +52,12 @@ impl Stop {
         });
         (forked_stop, forked_stopper)
     }
+
+    /// Creates a new stopper for this Stop signal that can be used to stop this Stop and all
+    /// its forked descendants
+    pub fn get_stopper(&self) -> Stopper {
+        Stopper::new(self.sender.clone())
+    }
 }
 
 impl Clone for Stop {
@@ -72,16 +80,19 @@ impl std::fmt::Display for Stop {
     }
 }
 
+/// TODO
 #[derive(Debug, Clone)]
 pub struct Stopper {
     sender: broadcast::Sender<()>,
 }
 
 impl Stopper {
+    /// TODO
     pub fn new(sender: broadcast::Sender<()>) -> Self {
         Self { sender }
     }
 
+    /// TODO
     pub fn stop(self) {
         let _ = self.sender.send(());
     }

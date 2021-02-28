@@ -1,31 +1,48 @@
+use futures::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
-    error::Error,
-    sync::{Arc, Mutex},
+    collections::{HashMap, HashSet},
+    iter::FromIterator,
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use crate::error::StoreError;
 use bmrng::{channel, RequestSender};
-use noxious::{error::NotFoundError, SharedProxyInfo, Toxic};
-use noxious::{ProxyConfig, ToxicEvent, ToxicEventKind, Toxics};
+use noxious::{
+    error::NotFoundError,
+    proxy::{ProxyConfig, Toxics},
+    signal::Stopper,
+    state::SharedProxyInfo,
+    toxic::{Toxic, ToxicEvent, ToxicEventKind},
+};
 use tracing::{info, instrument};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProxyEvent {
-    ResetToxics {},
     Populate {},
     CreateProxy {},
-    UpdateProxy {},
-    RemoveProxy {},
+    UpdateProxy { proxy_name: String },
+    RemoveProxy { proxy_name: String },
 }
 
+// TODO: this is temporary
 #[derive(Debug, Clone)]
 pub struct ProxyEventResult;
 
+#[derive(Debug, Clone)]
+pub struct ProxyHandle {
+    info: SharedProxyInfo,
+    proxy_stopper: Stopper,
+}
+
 #[derive(Debug)]
 pub struct Shared {
-    state: Mutex<HashMap<String, SharedProxyInfo>>,
+    state: Mutex<State>,
+}
+
+#[derive(Debug, Clone)]
+pub struct State {
+    proxies: HashMap<String, ProxyHandle>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,14 +61,45 @@ impl Store {
         }
     }
 
+    /// Remove all toxics from all proxies
     #[instrument]
     pub async fn reset_state(&self) -> Result<()> {
-        todo!()
+        let proxy_names = self.shared.get_state().get_proxy_names();
+        for key in proxy_names {
+            let res = self
+                .sender
+                .send(ProxyEvent::UpdateProxy { proxy_name: key })
+                .await;
+            if let Err(_) = res {
+                return Err(StoreError::Other);
+            }
+        }
+        Ok(())
     }
 
     #[instrument]
     pub async fn populate(&self, input: Vec<ProxyConfig>) -> Result<Vec<ProxyWithToxics>> {
-        // TODO: parse the json file, deserialize all toxics, start proxy tasks
+        // Stop the existing proxies with the same name
+        {
+            let mut state = self.shared.get_state();
+            input
+                .iter()
+                .filter_map(|config| state.proxies.remove(&config.name))
+                .for_each(|handle| handle.proxy_stopper.stop());
+        }
+
+        tokio::task::yield_now().await;
+
+        let shared = self.shared.clone();
+
+        // Since Tokio's `TcpListener::bind` sets the `SO_REUSEADDR` on the socket,
+        // we probably don't need to wait until the previous proxy's TcpListener is dropped.
+
+        stream::iter(input).for_each_concurrent(8, move |config| {
+            let shared = shared.clone();
+            shared.create_proxy(config)
+        }).await;
+
         todo!()
     }
 
@@ -71,7 +119,11 @@ impl Store {
     }
 
     #[instrument]
-    pub async fn update_proxy(&self, name: String, new_config: ProxyConfig) -> Result<ProxyWithToxics> {
+    pub async fn update_proxy(
+        &self,
+        name: String,
+        new_config: ProxyConfig,
+    ) -> Result<ProxyWithToxics> {
         todo!()
     }
 
@@ -81,7 +133,11 @@ impl Store {
     }
 
     #[instrument]
-    pub async fn create_toxic(&self, proxy_name: String, toxic: SerializableToxic) -> Result<ProxyWithToxics> {
+    pub async fn create_toxic(
+        &self,
+        proxy_name: String,
+        toxic: SerializableToxic,
+    ) -> Result<ProxyWithToxics> {
         todo!()
     }
 
@@ -100,7 +156,12 @@ impl Store {
     }
 
     #[instrument]
-    pub async fn update_toxic(&self, proxy_name: String, toxic_name: String, toxic: SerializableToxic) -> Result<ProxyWithToxics> {
+    pub async fn update_toxic(
+        &self,
+        proxy_name: String,
+        toxic_name: String,
+        toxic: SerializableToxic,
+    ) -> Result<ProxyWithToxics> {
         todo!()
     }
 
@@ -113,8 +174,39 @@ impl Store {
 impl Shared {
     pub fn new() -> Self {
         Shared {
-            state: Mutex::new(HashMap::new()),
+            state: Mutex::new(State::new()),
         }
+    }
+
+    fn get_state(&self) -> MutexGuard<State> {
+        self.state
+            .lock()
+            .expect("Failed to lock shared state, poison error")
+    }
+
+    async fn create_proxy(self: Arc<Self>, config: ProxyConfig) {
+        // TODO
+    }
+}
+
+impl State {
+    fn new() -> Self {
+        State {
+            proxies: HashMap::new(),
+        }
+    }
+
+    fn get_proxy_names(&self) -> Vec<String> {
+        Vec::from_iter(self.proxies.keys().map(|s| s.to_owned()))
+    }
+
+    fn get_proxy_names_set(&self) -> HashSet<String> {
+        self.proxies
+            .keys()
+            .fold(HashSet::with_capacity(self.proxies.len()), |mut acc, s| {
+                acc.insert(s.to_owned());
+                acc
+            })
     }
 }
 

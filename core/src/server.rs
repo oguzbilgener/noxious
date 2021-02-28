@@ -3,7 +3,7 @@ use std::io;
 use tokio::sync::mpsc;
 
 use crate::{
-    proxy::{run_proxy, ProxyConfig, Toxics},
+    proxy::{initialize_proxy, run_proxy, ProxyConfig, Toxics},
     signal::Stop,
     toxic::{StreamDirection, Toxic, ToxicEvent, ToxicEventKind, ToxicKind},
 };
@@ -29,11 +29,18 @@ pub async fn run(initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<(
         downstream: Vec::new(),
     };
     tokio::spawn(async move {
-        if let Err(err) = run_proxy(proxy_config, event_rx, it, stop).await {
-            println!("run proxy err");
-            dbg!(err);
+        match initialize_proxy(proxy_config, it).await {
+            Ok((listener, info)) => {
+                if let Err(err) = run_proxy(listener, info, event_rx, stop).await {
+                    println!("run proxy err");
+                    dbg!(err);
+                }
+                println!("proxy finished");
+            }
+            Err(err) => {
+                println!("init proxy err {:?}", err);
+            }
         }
-        println!("proxy finished");
     });
 
     tokio::spawn(async move {

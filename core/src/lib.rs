@@ -23,18 +23,15 @@
 
 pub mod error;
 mod link;
-mod proxy;
+pub mod proxy;
 mod server;
-mod signal;
-mod state;
+pub mod signal;
+pub mod state;
 mod stream;
-mod toxic;
+pub mod toxic;
 mod toxics;
 
 pub use server::run;
-pub use toxic::{Toxic, ToxicEvent, ToxicEventKind};
-pub use proxy::{ProxyConfig, Toxics};
-pub use state::{ProxyState, ProxyStateInner, SharedProxyInfo};
 
 #[cfg(test)]
 mod tests {

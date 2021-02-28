@@ -15,6 +15,7 @@ use std::{io, mem};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
+use tracing::info;
 
 /// The default Go io.Copy buffer size is 32K, so also use 32K buffers here to imitate Toxiproxy.
 const READ_BUFFER_SIZE: usize = 32768;
@@ -59,16 +60,34 @@ pub struct Toxics {
     pub downstream: Vec<Toxic>,
 }
 
-pub(crate) async fn run_proxy(
+/// TODO
+pub async fn initialize_proxy(
     config: ProxyConfig,
-    receiver: mpsc::Receiver<ToxicEvent>,
     initial_toxics: Toxics,
-    mut stop: Stop,
-) -> io::Result<SharedProxyInfo> {
+) -> io::Result<(TcpListener, SharedProxyInfo)> {
     let listener = TcpListener::bind(&config.listen).await?;
-    println!("listening on port {}", &config.listen);
+
+    info!("listening on port {}", &config.listen);
 
     let state = Arc::new(ProxyState::new(initial_toxics.clone()));
+
+    let proxy_info = SharedProxyInfo {
+        state,
+        config: Arc::new(config),
+    };
+
+    Ok((listener, proxy_info))
+}
+
+/// TODO
+pub async fn run_proxy(
+    listener: TcpListener,
+    proxy_info: SharedProxyInfo,
+    receiver: mpsc::Receiver<ToxicEvent>,
+    mut stop: Stop,
+) -> io::Result<()> {
+    let state = proxy_info.state;
+    let config = proxy_info.config;
 
     tokio::spawn(listen_toxic_events(
         state.clone(),
@@ -124,10 +143,7 @@ pub(crate) async fn run_proxy(
             }
         }
     }
-    Ok(SharedProxyInfo {
-        state,
-        config: Arc::new(config),
-    })
+    Ok(())
 }
 
 fn create_links(
@@ -214,7 +230,7 @@ async fn listen_toxic_events(
     state: Arc<ProxyState>,
     mut receiver: mpsc::Receiver<ToxicEvent>,
     mut stop: Stop,
-    config: ProxyConfig,
+    config: Arc<ProxyConfig>,
 ) {
     while !stop.stop_received() {
         let maybe_event: Option<ToxicEvent> = tokio::select! {
@@ -231,7 +247,7 @@ async fn listen_toxic_events(
 
 async fn process_toxic_event(
     state: Arc<ProxyState>,
-    config: ProxyConfig,
+    config: Arc<ProxyConfig>,
     stop: Stop,
     event: ToxicEvent,
 ) {
