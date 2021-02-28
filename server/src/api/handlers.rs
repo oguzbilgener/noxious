@@ -145,7 +145,7 @@ mod responses {
         result: Result<(), StoreError>,
     ) -> Result<impl Reply, Infallible> {
         match result {
-            Ok(data) => Ok(StatusCode::NO_CONTENT.into_response()),
+            Ok(_) => Ok(StatusCode::NO_CONTENT.into_response()),
             Err(err) => Ok(Into::<StatusCode>::into(err).into_response()),
         }
     }

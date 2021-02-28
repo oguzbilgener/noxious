@@ -92,7 +92,7 @@ impl Stopper {
         Self { sender }
     }
 
-    /// TODO
+    /// TODO: trace
     pub fn stop(self) {
         let _ = self.sender.send(());
     }

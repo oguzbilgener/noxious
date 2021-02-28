@@ -8,6 +8,7 @@ use crate::{
 };
 use futures::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -15,7 +16,7 @@ use std::{io, mem};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
-use tracing::info;
+use tracing::{error, info, instrument};
 
 /// The default Go io.Copy buffer size is 32K, so also use 32K buffers here to imitate Toxiproxy.
 const READ_BUFFER_SIZE: usize = 32768;
@@ -60,6 +61,38 @@ pub struct Toxics {
     pub downstream: Vec<Toxic>,
 }
 
+impl ProxyConfig {
+
+    /// Validate the proxy config, return `ProxyValidateError` if invalid
+    pub fn validate(&self) -> Result<(), ProxyValidateError> {
+        if self.name.is_empty() {
+            Err(ProxyValidateError::MissingName)
+        } else if self.upstream.is_empty() {
+            Err(ProxyValidateError::MissingUpstream)
+        } else if self.listen.is_empty() {
+            Err(ProxyValidateError::MissingListen)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Toxics {
+    /// Initialize an empty set up toxics
+    pub fn noop() -> Self {
+        Toxics {
+            upstream: Vec::new(),
+            downstream: Vec::new(),
+        }
+    }
+
+    /// Consume this Toxics struct to combine upstream and downstream toxics in a flat unordered vec
+    pub fn into_vec(mut self) -> Vec<Toxic> {
+        self.upstream.append(&mut self.downstream);
+        self.upstream
+    }
+}
+
 /// TODO
 pub async fn initialize_proxy(
     config: ProxyConfig,
@@ -69,7 +102,7 @@ pub async fn initialize_proxy(
 
     info!("listening on port {}", &config.listen);
 
-    let state = Arc::new(ProxyState::new(initial_toxics.clone()));
+    let state = Arc::new(ProxyState::new(initial_toxics));
 
     let proxy_info = SharedProxyInfo {
         state,
@@ -80,6 +113,7 @@ pub async fn initialize_proxy(
 }
 
 /// TODO
+#[instrument]
 pub async fn run_proxy(
     listener: TcpListener,
     proxy_info: SharedProxyInfo,
@@ -105,9 +139,17 @@ pub async fn run_proxy(
         }?;
 
         if let Some((client_stream, addr)) = maybe_connection {
-            println!("\n\n~~ new client connected at {}", addr);
-            // TODO: wrap this error? (could not connect to upstream)
-            let upstream = TcpStream::connect(&config.upstream).await?;
+            // TODO: start a new span
+            info!("Accepted client {}", addr);
+            let upstream = match TcpStream::connect(&config.upstream).await {
+                Ok(upstream) => upstream,
+                Err(err) => {
+                    // TODO: log details
+                    error!("Unable to open connection to upstream {:?}", err);
+                    // This is not a fatal error, can retry next time another client connects
+                    continue;
+                }
+            };
 
             let (client_read, client_write) = client_stream.into_split();
             let (upstream_read, upstream_write) = upstream.into_split();
@@ -135,8 +177,8 @@ pub async fn run_proxy(
             );
             match res {
                 Err(err) => {
-                    // TODO: trace
-                    println!("{}", err);
+                    // TODO: log arguments
+                    error!("Unable to establish link for proxy {:?}", err);
                     continue;
                 }
                 _ => {}
@@ -317,4 +359,14 @@ fn update_toxics(event: ToxicEvent, toxics: &mut Toxics) -> Result<(), NotFoundE
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Error, PartialEq)]
+pub enum ProxyValidateError {
+    #[error("name missing")]
+    MissingName,
+    #[error("upstream missing")]
+    MissingUpstream,
+    #[error("listen address missing")]
+    MissingListen,
 }

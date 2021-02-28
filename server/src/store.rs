@@ -1,4 +1,4 @@
-use futures::{stream, StreamExt};
+use futures::{future::join_all, stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -10,8 +10,8 @@ use crate::error::StoreError;
 use bmrng::{channel, RequestSender};
 use noxious::{
     error::NotFoundError,
-    proxy::{ProxyConfig, Toxics},
-    signal::Stopper,
+    proxy::{initialize_proxy, run_proxy, ProxyConfig, Toxics},
+    signal::{Stop, Stopper},
     state::SharedProxyInfo,
     toxic::{Toxic, ToxicEvent, ToxicEventKind},
 };
@@ -31,7 +31,9 @@ pub struct ProxyEventResult;
 
 #[derive(Debug, Clone)]
 pub struct ProxyHandle {
+    /// The inner proxy state containing the added toxics and connected clients and their links
     info: SharedProxyInfo,
+    /// The stopper handle to send a stop signal to this proxy and all its link tasks
     proxy_stopper: Stopper,
 }
 
@@ -79,6 +81,12 @@ impl Store {
 
     #[instrument]
     pub async fn populate(&self, input: Vec<ProxyConfig>) -> Result<Vec<ProxyWithToxics>> {
+        for config in &input {
+            if let Err(err) = config.validate() {
+                return Err(err.into());
+            }
+        }
+
         // Stop the existing proxies with the same name
         {
             let mut state = self.shared.get_state();
@@ -90,21 +98,37 @@ impl Store {
 
         tokio::task::yield_now().await;
 
-        let shared = self.shared.clone();
-
-        // Since Tokio's `TcpListener::bind` sets the `SO_REUSEADDR` on the socket,
+        // Since Tokio's `TcpListener::bind` sets the `SO_REUSEADDR` option on the socket,
         // we probably don't need to wait until the previous proxy's TcpListener is dropped.
 
-        stream::iter(input).for_each_concurrent(8, move |config| {
-            let shared = shared.clone();
-            shared.create_proxy(config)
-        }).await;
+        let mut created_proxies = Vec::with_capacity(input.len());
 
-        todo!()
+        for config in input {
+            match self.shared.clone().create_proxy(config).await {
+                Ok(shared_proxy_info) => {
+                    created_proxies.push(shared_proxy_info);
+                }
+                Err(err) => {
+                    // Do what ToxiProxy does in `PopulateJson`, return early,
+                    // even if we're halfway through creating and starting new toxics.
+                    return Err(err);
+                }
+            }
+        }
+
+        // Newly created proxies do not yet have any toxics, so we don't need to
+        // acquire any more locks to retrieve the toxic lists.
+        let proxies_with_toxics: Vec<ProxyWithToxics> = created_proxies
+            .into_iter()
+            .map(|info| ProxyWithToxics::from_proxy_config(info.clone_config()))
+            .collect();
+        Ok(proxies_with_toxics)
     }
 
     #[instrument]
     pub async fn get_proxies(&self) -> Result<Vec<ProxyWithToxics>> {
+        let state = self.shared.get_state();
+
         todo!()
     }
 
@@ -115,7 +139,9 @@ impl Store {
 
     #[instrument]
     pub async fn get_proxy(&self, name: String) -> Result<ProxyWithToxics> {
-        todo!()
+        let state = self.shared.get_state();
+        let proxy = state.proxies.get(&name).ok_or(StoreError::NotFound)?;
+        Ok(ProxyWithToxics::from_shared_proxy_info(proxy.info.clone()))
     }
 
     #[instrument]
@@ -184,8 +210,19 @@ impl Shared {
             .expect("Failed to lock shared state, poison error")
     }
 
-    async fn create_proxy(self: Arc<Self>, config: ProxyConfig) {
+    async fn create_proxy(self: Arc<Self>, config: ProxyConfig) -> Result<SharedProxyInfo> {
         // TODO
+        let (listener, proxy_info) = initialize_proxy(config, Toxics::noop()).await?;
+
+        let info = proxy_info.clone();
+        tokio::spawn(async move {
+            // TODO: figure out this channel, make it 2-way probably
+            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            let (global_stop, _) = Stop::new();
+            run_proxy(listener, info, rx, global_stop).await
+        });
+
+        Ok(proxy_info)
     }
 }
 
@@ -231,4 +268,22 @@ impl From<Toxic> for SerializableToxic {
 pub struct ProxyWithToxics {
     pub proxy: ProxyConfig,
     pub toxics: Vec<SerializableToxic>,
+}
+
+impl ProxyWithToxics {
+    /// Create a new ProxyWithToxics with empty toxics
+    pub fn from_proxy_config(proxy_config: ProxyConfig) -> Self {
+        ProxyWithToxics {
+            proxy: proxy_config,
+            toxics: Vec::new(),
+        }
+    }
+
+    pub fn from_shared_proxy_info(info: SharedProxyInfo) -> Self {
+        let proxy_state = info.state.lock();
+        ProxyWithToxics {
+            proxy: info.clone_config(),
+            toxics: proxy_state.toxics.clone().into_vec(),
+        }
+    }
 }

@@ -52,10 +52,22 @@ impl ProxyState {
     }
 }
 
+impl SharedProxyInfo {
+    /// Return a new clone of the inner proxy config with owned strings
+    pub fn clone_config(&self) -> ProxyConfig {
+        (*self.config).clone()
+    }
+}
+
+#[allow(missing_copy_implementations)]
 /// The state for stateful toxics
 #[derive(Debug, PartialEq)]
 pub enum ToxicState {
-    LimitData { bytes_transmitted: usize },
+    /// LimitData toxic keeps track of the bytes transmitted
+    LimitData {
+        /// Bytes transmitted since the opening of a client - upstream proxy connection, per client
+        bytes_transmitted: usize,
+    },
 }
 
 impl ToxicState {

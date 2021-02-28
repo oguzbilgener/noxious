@@ -28,33 +28,33 @@ pub async fn run(initial_toxics: Vec<()>, shutdown: impl Future) -> io::Result<(
         upstream: Vec::new(),
         downstream: Vec::new(),
     };
-    tokio::spawn(async move {
-        match initialize_proxy(proxy_config, it).await {
-            Ok((listener, info)) => {
-                if let Err(err) = run_proxy(listener, info, event_rx, stop).await {
-                    println!("run proxy err");
-                    dbg!(err);
-                }
-                println!("proxy finished");
-            }
-            Err(err) => {
-                println!("init proxy err {:?}", err);
-            }
-        }
-    });
+    // tokio::spawn(async move {
+    //     match initialize_proxy(proxy_config, it).await {
+    //         Ok((listener, info)) => {
+    //             if let Err(err) = run_proxy(listener, info, event_rx, stop).await {
+    //                 println!("run proxy err");
+    //                 dbg!(err);
+    //             }
+    //             println!("proxy finished");
+    //         }
+    //         Err(err) => {
+    //             println!("init proxy err {:?}", err);
+    //         }
+    //     }
+    // });
 
-    tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        println!(" -- firing event remove a toxic");
-        let _ = event_tx
-            .send(ToxicEvent::new(
-                "mongo",
-                StreamDirection::Downstream,
-                "foo1",
-                ToxicEventKind::ToxicRemove("foo1".to_owned()),
-            ))
-            .await;
-    });
+    // tokio::spawn(async move {
+    //     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    //     println!(" -- firing event remove a toxic");
+    //     let _ = event_tx
+    //         .send(ToxicEvent::new(
+    //             "mongo",
+    //             StreamDirection::Downstream,
+    //             "foo1",
+    //             ToxicEventKind::ToxicRemove("foo1".to_owned()),
+    //         ))
+    //         .await;
+    // });
 
     shutdown.await;
     println!("shutdown received, sending stop signal");
