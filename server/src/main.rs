@@ -1,11 +1,13 @@
-use crate::store::{ProxyEvent, ProxyEventResult, Store};
+// use crate::store::{ProxyEvent, ProxyEventResult, Store};
 use bmrng::{channel, RequestSender};
-use noxious::error::NotFoundError;
 use noxious::toxic::{ToxicEvent, ToxicEventKind};
-use std::default::Default;
+use noxious::{error::NotFoundError, signal::Stop};
 use std::net::SocketAddr;
+use std::{default::Default, net::IpAddr};
 use tokio::signal;
-use tracing::{debug, instrument};
+use tracing::{debug, error, info, instrument};
+
+use crate::store::Store;
 
 mod api;
 mod error;
@@ -35,26 +37,55 @@ impl Default for Args {
     }
 }
 
+impl Args {
+    fn get_ip_addr(&self) -> IpAddr {
+        self.host.parse().expect("Invalid host address")
+    }
+    fn get_port_number(&self) -> u16 {
+        self.port.parse().expect("Invalid port number")
+    }
+}
+
 #[tokio::main]
 async fn main() {
     util::init_tracing();
 
-    let (sender, receiver) = bmrng::channel::<ProxyEvent, ProxyEventResult>(16);
+    // TODO: parse the command line args
 
-    let store = Store::new(sender);
+    let args = Args::default();
 
-    // TODO: parse the json file, deserialize all toxics, start proxy tasks
-    store.populate(Vec::new()).await;
+    let (stop, stopper) = Stop::new();
 
-    // TODO: harmonious shutdown handling
-    // noxious::run(Vec::new(), signal::ctrl_c())
-    //     .await
-    //     .expect("uh?");
+    let store = Store::new(stop.clone());
+
+    let file_name = "foo.json";
+
+    // TODO: parse the json file, deserialize all toxics
+    let proxy_configs = Vec::new();
+
+    match store.populate(proxy_configs).await {
+        Ok(proxies) => {
+            info!(
+                config = file_name,
+                proxies = proxies.len(),
+                "Populated proxies from file"
+            );
+        }
+        Err(err) => {
+            error!(err = ?err, file_name, "Failed populate proxies from file");
+        }
+    }
+
+    tokio::spawn(async move {
+        let _ = signal::ctrl_c().await;
+        info!("Shutting down");
+        stopper.stop();
+    });
 
     api::serve(
-        SocketAddr::new([127, 0, 0, 1].into(), 8474),
+        SocketAddr::new(args.get_ip_addr(), args.get_port_number()),
         store,
-        signal::ctrl_c(),
+        stop,
     )
     .await;
 }

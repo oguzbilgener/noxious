@@ -67,7 +67,7 @@ pub async fn remove_proxy(name: String, store: Store) -> Result<impl Reply, Infa
 }
 
 pub async fn get_toxics(proxy_name: String, store: Store) -> Result<impl Reply, Infallible> {
-    wrap_store_result(async move { store.get_toxics(proxy_name).await }).await
+    wrap_store_result(async move { store.get_toxics(&proxy_name).await }).await
 }
 
 pub async fn create_toxic(
@@ -83,7 +83,7 @@ pub async fn get_toxic(
     toxic_name: String,
     store: Store,
 ) -> Result<impl Reply, Infallible> {
-    wrap_store_result(async move { store.get_toxic(proxy_name, toxic_name).await }).await
+    wrap_store_result(async move { store.get_toxic(&proxy_name, &toxic_name).await }).await
 }
 
 pub async fn update_toxic(

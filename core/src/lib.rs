@@ -24,14 +24,11 @@
 pub mod error;
 mod link;
 pub mod proxy;
-mod server;
 pub mod signal;
 pub mod state;
 mod stream;
 pub mod toxic;
 mod toxics;
-
-pub use server::run;
 
 #[cfg(test)]
 mod tests {

@@ -1,20 +1,20 @@
 use crate::{
-    error::NotFoundError,
+    error::{NotFoundError, ToxicUpdateError},
     link::Link,
     signal::Stop,
     state::{ProxyState, SharedProxyInfo, ToxicStateHolder},
     stream::{Read, Write},
-    toxic::{update_toxic_list_in_place, StreamDirection, Toxic, ToxicEvent},
+    toxic::{update_toxic_list_in_place, StreamDirection, Toxic, ToxicEvent, ToxicEventResult},
 };
+use bmrng::{Payload, RequestReceiver};
 use futures::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::{io, mem};
+use thiserror::Error;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc;
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 use tracing::{error, info, instrument};
 
@@ -62,7 +62,6 @@ pub struct Toxics {
 }
 
 impl ProxyConfig {
-
     /// Validate the proxy config, return `ProxyValidateError` if invalid
     pub fn validate(&self) -> Result<(), ProxyValidateError> {
         if self.name.is_empty() {
@@ -91,6 +90,18 @@ impl Toxics {
         self.upstream.append(&mut self.downstream);
         self.upstream
     }
+
+    pub fn find_by_name(&self, toxic_name: &str) -> Option<Toxic> {
+        self.upstream
+            .iter()
+            .find(|toxic| toxic.name == toxic_name)
+            .or_else(|| {
+                self.downstream
+                    .iter()
+                    .find(|toxic| toxic.name == toxic_name)
+            })
+            .map(|toxic| toxic.to_owned())
+    }
 }
 
 /// TODO
@@ -117,7 +128,7 @@ pub async fn initialize_proxy(
 pub async fn run_proxy(
     listener: TcpListener,
     proxy_info: SharedProxyInfo,
-    receiver: mpsc::Receiver<ToxicEvent>,
+    receiver: RequestReceiver<ToxicEvent, ToxicEventResult>,
     mut stop: Stop,
 ) -> io::Result<()> {
     let state = proxy_info.state;
@@ -270,17 +281,23 @@ fn create_links(
 
 async fn listen_toxic_events(
     state: Arc<ProxyState>,
-    mut receiver: mpsc::Receiver<ToxicEvent>,
+    mut receiver: RequestReceiver<ToxicEvent, ToxicEventResult>,
     mut stop: Stop,
     config: Arc<ProxyConfig>,
 ) {
     while !stop.stop_received() {
-        let maybe_event: Option<ToxicEvent> = tokio::select! {
-            res = receiver.recv() => res,
+        let maybe_payload: Option<Payload<ToxicEvent, ToxicEventResult>> = tokio::select! {
+            res = receiver.recv() => {
+                if let Ok(payload) = res {
+                    Some(payload)
+                } else {
+                    None
+                }
+            },
             _ = stop.recv() => None,
         };
-        if let Some(event) = maybe_event {
-            process_toxic_event(state.clone(), config.clone(), stop.clone(), event).await;
+        if let Some(payload) = maybe_payload {
+            process_toxic_event(state.clone(), config.clone(), stop.clone(), payload).await;
         } else {
             break;
         }
@@ -291,13 +308,13 @@ async fn process_toxic_event(
     state: Arc<ProxyState>,
     config: Arc<ProxyConfig>,
     stop: Stop,
-    event: ToxicEvent,
+    (request, mut responder): Payload<ToxicEvent, ToxicEventResult>,
 ) {
     let new_toxics = {
         let mut current_state = state.lock();
-        if let Err(err) = update_toxics(event, &mut current_state.toxics) {
-            // TODO: log this, return a reply to event sender
-            println!("toxic not found {}", err);
+        if let Err(err) = update_toxics(request, &mut current_state.toxics) {
+            let _ = responder.respond(Err(err.into()));
+            return;
         }
         current_state.toxics.clone()
     };
@@ -319,8 +336,7 @@ async fn process_toxic_event(
         )
         .await
         {
-            // TODO: log this
-            println!("Failed to recreate links for client {}, {:?}", addr, err);
+            error!(err = ?err, addr = ?addr, proxy = ?&config.name, "Failed to recreate links for client");
         }
     }
 }
@@ -349,16 +365,11 @@ async fn recreate_links(
     )
 }
 
+/// Update the toxics collection in place
 fn update_toxics(event: ToxicEvent, toxics: &mut Toxics) -> Result<(), NotFoundError> {
-    match event.direction {
-        StreamDirection::Upstream => {
-            update_toxic_list_in_place(&mut toxics.upstream, event.kind)?;
-        }
-        StreamDirection::Downstream => {
-            update_toxic_list_in_place(&mut toxics.downstream, event.kind)?;
-        }
-    }
-    Ok(())
+    update_toxic_list_in_place(&mut toxics.upstream, event.kind)
+        .or_else(|kind| update_toxic_list_in_place(&mut toxics.downstream, kind))
+        .or(Err(NotFoundError))
 }
 
 #[derive(Debug, Clone, Error, PartialEq)]
@@ -369,4 +380,50 @@ pub enum ProxyValidateError {
     MissingUpstream,
     #[error("listen address missing")]
     MissingListen,
+}
+
+#[cfg(test)]
+mod serde_tests {
+    use super::*;
+    use serde_json::{from_str, to_string};
+
+    #[test]
+    fn test_ser_and_de() {
+        let config = ProxyConfig {
+            name: "foo".to_owned(),
+            listen: "127.0.0.1:5431".to_owned(),
+            upstream: "127.0.0.1:5432".to_owned(),
+            enabled: false,
+            rand_seed: Some(3),
+        };
+        let serialized = to_string(&config).unwrap();
+        let expected = "{\"name\":\"foo\",\"listen\":\"127.0.0.1:5431\",\"upstream\":\"127.0.0.1:5432\",\"enabled\":false}";
+        assert_eq!(expected, serialized);
+
+        let expected = ProxyConfig {
+            name: "foo".to_owned(),
+            listen: "127.0.0.1:5431".to_owned(),
+            upstream: "127.0.0.1:5432".to_owned(),
+            enabled: false,
+            rand_seed: None,
+        };
+
+        let deserialized = from_str(&serialized).unwrap();
+        assert_eq!(expected, deserialized);
+    }
+
+    #[test]
+    fn test_optional_enabled() {
+        let expected = ProxyConfig {
+            name: "foo".to_owned(),
+            listen: "127.0.0.1:5431".to_owned(),
+            upstream: "127.0.0.1:5432".to_owned(),
+            enabled: true,
+            rand_seed: None,
+        };
+        let input =
+            "{\"name\":\"foo\",\"listen\":\"127.0.0.1:5431\",\"upstream\":\"127.0.0.1:5432\"}";
+        let deserialized = from_str(&input).unwrap();
+        assert_eq!(expected, deserialized);
+    }
 }

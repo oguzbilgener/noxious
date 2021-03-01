@@ -287,7 +287,7 @@ impl Link {
             .disband_receiver
             .expect("State error: Link already disbanded, or never established")
             .await
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "already closed?"))?;
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "already closed?"))?;
 
         Ok((reader, writer))
     }

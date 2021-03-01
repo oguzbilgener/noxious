@@ -1,4 +1,4 @@
-use noxious::proxy::ProxyValidateError;
+use noxious::{error::ToxicUpdateError, proxy::ProxyValidateError};
 use std::io;
 use thiserror::Error;
 use warp::http::StatusCode;
@@ -19,6 +19,8 @@ pub enum StoreError {
     NotFound(ResourceKind),
     #[error("I/O error: {0:?}")]
     IoError(io::ErrorKind),
+    #[error("Proxy closed")]
+    ProxyClosed,
     #[error("Internal server error")]
     Other,
 }
@@ -29,7 +31,7 @@ impl From<StoreError> for StatusCode {
             StoreError::InvalidProxyConfig(..) => StatusCode::BAD_REQUEST,
             StoreError::AlreadyExists => StatusCode::CONFLICT,
             StoreError::NotFound(..) => StatusCode::NOT_FOUND,
-            StoreError::IoError(..) | StoreError::Other => StatusCode::INTERNAL_SERVER_ERROR,
+            StoreError::ProxyClosed | StoreError::IoError(..) | StoreError::Other => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -46,6 +48,15 @@ impl From<ProxyValidateError> for StoreError {
     }
 }
 
+impl From<ToxicUpdateError> for StoreError {
+    fn from(err: ToxicUpdateError) -> Self {
+        match err {
+            ToxicUpdateError::NotFound => StoreError::NotFound(ResourceKind::Toxic),
+            ToxicUpdateError::Other => StoreError::Other,
+        }
+    }
+}
+
 impl std::fmt::Display for ResourceKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -53,4 +64,10 @@ impl std::fmt::Display for ResourceKind {
             ResourceKind::Proxy => write!(f, "proxy"),
         }
     }
+}
+
+#[derive(Debug, Clone, Error, PartialEq)]
+pub enum ProxyEventError {
+    #[error("{0} not found")]
+    NotFound(ResourceKind),
 }

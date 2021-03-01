@@ -9,28 +9,18 @@ use std::{
     },
 };
 
-use crate::error::{ResourceKind, StoreError};
-use bmrng::{channel, RequestSender};
+use crate::error::{ProxyEventError, ResourceKind, StoreError};
+use bmrng::{channel, error::RequestError, RequestSender};
 use noxious::{
     error::NotFoundError,
     proxy::{initialize_proxy, run_proxy, ProxyConfig, Toxics},
     signal::{Stop, Stopper},
     state::SharedProxyInfo,
-    toxic::{Toxic, ToxicEvent, ToxicEventKind},
+    toxic::{Toxic, ToxicEvent, ToxicEventKind, ToxicEventResult},
 };
 use tracing::{info, instrument};
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ProxyEvent {
-    Populate {},
-    CreateProxy {},
-    UpdateProxy { proxy_name: String },
-    RemoveProxy { proxy_name: String },
-}
-
-// TODO: this is temporary
-#[derive(Debug, Clone)]
-pub struct ProxyEventResult;
+const TOXIC_EVENT_BUFFER_SIZE: usize = 2;
 
 #[derive(Debug, Clone)]
 pub struct ProxyHandle {
@@ -40,12 +30,15 @@ pub struct ProxyHandle {
     proxy_stopper: Stopper,
     /// Internal: used to check if two proxy handles are equal
     id: usize,
+    /// Proxy-specific event sender
+    event_sender: RequestSender<ToxicEvent, ToxicEventResult>,
 }
 
 #[derive(Debug)]
 pub struct Shared {
     state: Mutex<State>,
     next_proxy_id: AtomicUsize,
+    stop: Stop,
 }
 
 #[derive(Debug, Clone)]
@@ -56,32 +49,36 @@ pub struct State {
 #[derive(Debug, Clone)]
 pub struct Store {
     shared: Arc<Shared>,
-    sender: RequestSender<ProxyEvent, ProxyEventResult>,
 }
 
 type Result<T> = core::result::Result<T, StoreError>;
 
 impl Store {
-    pub fn new(sender: RequestSender<ProxyEvent, ProxyEventResult>) -> Self {
+    pub fn new(stop: Stop) -> Self {
         Store {
-            shared: Arc::new(Shared::new()),
-            sender,
+            shared: Arc::new(Shared::new(stop)),
         }
     }
 
     /// Remove all toxics from all proxies
     #[instrument]
     pub async fn reset_state(&self) -> Result<()> {
-        let proxy_names = self.shared.get_state().get_proxy_names();
-        for key in proxy_names {
-            let res = self
-                .sender
-                .send(ProxyEvent::UpdateProxy { proxy_name: key })
-                .await;
-            if let Err(_) = res {
-                return Err(StoreError::Other);
-            }
-        }
+        let pairs: Vec<(String, RequestSender<ToxicEvent, ToxicEventResult>)> = self
+            .shared
+            .get_state()
+            .proxies
+            .iter_mut()
+            .map(|(name, handle)| (name.to_owned(), handle.event_sender.clone()))
+            .collect();
+
+        stream::iter(pairs)
+            .for_each(|(name, sender)| async move {
+                let _ = sender
+                    .send(ToxicEvent::new(name, ToxicEventKind::RemoveAllToxics))
+                    .await;
+            })
+            .await;
+
         Ok(())
     }
 
@@ -160,34 +157,74 @@ impl Store {
     #[instrument]
     pub async fn update_proxy(
         &self,
-        name: String,
+        proxy_name: String,
         new_config: ProxyConfig,
     ) -> Result<ProxyWithToxics> {
-        todo!()
+        self.shared.remove_proxy(&proxy_name).await?;
+        let shared_proxy_info = self.shared.create_proxy(new_config).await?;
+        Ok(ProxyWithToxics::from_shared_proxy_info(shared_proxy_info))
     }
 
     #[instrument]
     pub async fn remove_proxy(&self, proxy_name: &str) -> Result<()> {
-        if let Some(_) = self.shared.get_state().proxies.remove(proxy_name) {
-            Ok(())
-        } else {
-            Err(StoreError::NotFound(ResourceKind::Proxy))
+        self.shared.remove_proxy(proxy_name).await?;
+        Ok(())
+    }
+
+    #[instrument]
+    pub async fn create_toxic(&self, proxy_name: String, toxic: Toxic) -> Result<Toxic> {
+        let sender = self
+            .shared
+            .get_state()
+            .proxies
+            .get(&proxy_name)
+            .ok_or(StoreError::NotFound(ResourceKind::Proxy))?
+            .event_sender
+            .clone();
+
+        let result = sender
+            .send_receive(ToxicEvent::new(
+                proxy_name,
+                ToxicEventKind::AddToxic(toxic.clone()),
+            ))
+            .await
+            .map_err(|_| StoreError::ProxyClosed);
+
+        match result {
+            Ok(_) => Ok(toxic),
+            Err(err) => Err(err.into()),
         }
     }
 
     #[instrument]
-    pub async fn create_toxic(&self, proxy_name: String, toxic: Toxic) -> Result<ProxyWithToxics> {
-        todo!()
+    pub async fn get_toxics(&self, proxy_name: &str) -> Result<Vec<Toxic>> {
+        Ok(self
+            .shared
+            .get_state()
+            .proxies
+            .get(proxy_name)
+            .ok_or(StoreError::NotFound(ResourceKind::Proxy))?
+            .info
+            .state
+            .lock()
+            .toxics
+            .to_owned()
+            .into_vec())
     }
 
     #[instrument]
-    pub async fn get_toxics(&self, proxy_name: String) -> Result<Vec<Toxic>> {
-        todo!()
-    }
-
-    #[instrument]
-    pub async fn get_toxic(&self, proxy_name: String, toxic_name: String) -> Result<Toxic> {
-        todo!()
+    pub async fn get_toxic(&self, proxy_name: &str, toxic_name: &str) -> Result<Toxic> {
+        self.shared
+            .get_state()
+            .proxies
+            .get(proxy_name)
+            .ok_or(StoreError::NotFound(ResourceKind::Proxy))?
+            .info
+            .state
+            .lock()
+            .toxics
+            .find_by_name(toxic_name)
+            .ok_or(StoreError::NotFound(ResourceKind::Toxic))
     }
 
     #[instrument]
@@ -196,24 +233,59 @@ impl Store {
         proxy_name: String,
         toxic_name: String,
         toxic: Toxic,
-    ) -> Result<ProxyWithToxics> {
-        todo!()
+    ) -> Result<Toxic> {
+        let sender = self
+            .shared
+            .get_state()
+            .proxies
+            .get(&proxy_name)
+            .ok_or(StoreError::NotFound(ResourceKind::Proxy))?
+            .event_sender
+            .clone();
+
+        let result = sender
+            .send_receive(ToxicEvent::new(
+                proxy_name,
+                ToxicEventKind::UpdateToxic(toxic.clone()),
+            ))
+            .await
+            .map_err(|_| StoreError::ProxyClosed);
+
+        match result {
+            Ok(_) => Ok(toxic),
+            Err(err) => Err(err.into()),
+        }
     }
 
     #[instrument]
     pub async fn remove_toxic(&self, proxy_name: String, toxic_name: String) -> Result<()> {
-        todo!()
+        let sender = self.shared.get_event_sender_for_proxy(&proxy_name)?;
+
+        let result = sender
+            .send_receive(ToxicEvent::new(
+                proxy_name,
+                ToxicEventKind::RemoveToxic(toxic_name),
+            ))
+            .await
+            .map_err(|_| StoreError::ProxyClosed);
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(err) => Err(err.into()),
+        }
     }
 }
 
 impl Shared {
-    pub fn new() -> Self {
+    pub fn new(stop: Stop) -> Self {
         Shared {
             state: Mutex::new(State::new()),
             next_proxy_id: AtomicUsize::new(0),
+            stop,
         }
     }
 
+    #[instrument]
     fn get_state(&self) -> MutexGuard<State> {
         self.state
             .lock()
@@ -225,15 +297,11 @@ impl Shared {
             return Err(StoreError::AlreadyExists);
         }
         let proxy_name = config.name.clone();
-
         let (listener, proxy_info) = initialize_proxy(config, Toxics::noop()).await?;
-
         let info = proxy_info.clone();
         let shared = self.clone();
-
-        // TODO: pass the real global stop signal
-        let (stop, proxy_stopper) = Stop::new();
-
+        let (stop, proxy_stopper) = self.stop.fork();
+        let (event_sender, event_receiver) = bmrng::channel(TOXIC_EVENT_BUFFER_SIZE);
         let launch_id = shared.next_proxy_id.fetch_add(1, Ordering::Relaxed);
 
         shared.get_state().proxies.insert(
@@ -242,13 +310,12 @@ impl Shared {
                 info: info.clone(),
                 proxy_stopper,
                 id: launch_id,
+                event_sender,
             },
         );
 
         tokio::spawn(async move {
-            // TODO: figure out this channel, make it 2-way probably
-            let (tx, rx) = tokio::sync::mpsc::channel(1);
-            let _ = run_proxy(listener, info, rx, stop).await;
+            let _ = run_proxy(listener, info, event_receiver, stop).await;
             // Proxy task ended because of the stop signal, or an I/O error on accept.
             // So we should self-clean by removing the proxy from the state, if
             // the proxy in the state with the same name also has the same launch ID.
@@ -262,6 +329,28 @@ impl Shared {
 
         Ok(proxy_info)
     }
+
+    async fn remove_proxy(self: &Arc<Self>, proxy_name: &str) -> Result<SharedProxyInfo> {
+        if let Some(handle) = self.get_state().proxies.remove(proxy_name) {
+            handle.proxy_stopper.stop();
+            Ok(handle.info)
+        } else {
+            Err(StoreError::NotFound(ResourceKind::Proxy))
+        }
+    }
+
+    fn get_event_sender_for_proxy(
+        &self,
+        proxy_name: &str,
+    ) -> Result<RequestSender<ToxicEvent, ToxicEventResult>> {
+        Ok(self
+            .get_state()
+            .proxies
+            .get(proxy_name)
+            .ok_or(StoreError::NotFound(ResourceKind::Proxy))?
+            .event_sender
+            .clone())
+    }
 }
 
 impl State {
@@ -269,10 +358,6 @@ impl State {
         State {
             proxies: HashMap::new(),
         }
-    }
-
-    fn get_proxy_names(&self) -> Vec<String> {
-        Vec::from_iter(self.proxies.keys().map(|s| s.to_owned()))
     }
 
     fn proxy_exists(&self, name: &str) -> bool {

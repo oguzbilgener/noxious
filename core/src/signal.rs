@@ -22,11 +22,13 @@ impl Stop {
         (stop, stopper)
     }
 
-    pub(crate) fn stop_received(&self) -> bool {
+    /// TODO
+    pub fn stop_received(&self) -> bool {
         self.stopped
     }
 
-    pub(crate) async fn recv(&mut self) {
+    /// TODO
+    pub async fn recv(&mut self) {
         if self.stopped {
             return;
         }

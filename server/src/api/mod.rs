@@ -1,7 +1,8 @@
 use crate::store::Store;
 use crate::util;
-use std::{future::Future, net::SocketAddr};
-use tracing::info;
+use noxious::signal::Stop;
+use std::net::SocketAddr;
+use tracing::{debug, info};
 use warp::{Filter, Rejection, Reply};
 
 // rest api
@@ -23,7 +24,9 @@ fn make_filters(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejec
         .or(get_toxic(store.clone()).or(remove_toxic(store.clone())))
 }
 
-pub async fn serve(addr: SocketAddr, store: Store, shutdown: impl Future) {
+/// Serve the API server
+/// Panics if the the provided SocketAddr is invalid or unavailable.
+pub async fn serve(addr: SocketAddr, store: Store, mut stop: Stop) {
     let version = util::get_version();
     info!(
         addr = ?addr,
@@ -35,6 +38,7 @@ pub async fn serve(addr: SocketAddr, store: Store, shutdown: impl Future) {
     let routes = api.with(warp::log("noxious"));
     tokio::select! {
         _ = warp::serve(routes).run(addr) => {},
-        _ = shutdown => {},
+        _ = stop.recv() => {},
     };
+    debug!("API HTTP server shutting down");
 }

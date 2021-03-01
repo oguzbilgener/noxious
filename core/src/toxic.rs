@@ -1,4 +1,4 @@
-use crate::error::NotFoundError;
+use crate::error::{NotFoundError, ToxicUpdateError};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::mem;
@@ -49,19 +49,19 @@ pub struct Toxic {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToxicEventKind {
-    ToxicAdd(Toxic),
-    ToxicUpdate(Toxic),
-    ToxicRemove(String),
-    ToxicRemoveAll,
+    AddToxic(Toxic),
+    UpdateToxic(Toxic),
+    RemoveToxic(String),
+    RemoveAllToxics,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToxicEvent {
     pub(super) proxy_name: String,
-    pub(super) direction: StreamDirection,
-    pub(super) toxic_name: String,
     pub(super) kind: ToxicEventKind,
 }
+
+pub type ToxicEventResult = Result<(), ToxicUpdateError>;
 
 impl fmt::Display for StreamDirection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -87,18 +87,8 @@ impl Toxic {
 
 impl ToxicEvent {
     /// TODO
-    pub fn new(
-        proxy_name: &str,
-        direction: StreamDirection,
-        toxic_name: &str,
-        kind: ToxicEventKind,
-    ) -> Self {
-        ToxicEvent {
-            proxy_name: proxy_name.to_owned(),
-            direction,
-            toxic_name: toxic_name.to_owned(),
-            kind,
-        }
+    pub fn new(proxy_name: String, kind: ToxicEventKind) -> Self {
+        ToxicEvent { proxy_name, kind }
     }
 }
 
@@ -128,26 +118,29 @@ impl ToxicKind {
 pub(super) fn update_toxic_list_in_place(
     toxics: &mut Vec<Toxic>,
     event_kind: ToxicEventKind,
-) -> Result<(), NotFoundError> {
+) -> Result<(), ToxicEventKind> {
     match event_kind {
-        ToxicEventKind::ToxicAdd(toxic) => {
+        ToxicEventKind::AddToxic(toxic) => {
             toxics.push(toxic);
         }
-        ToxicEventKind::ToxicUpdate(toxic) => {
+        ToxicEventKind::UpdateToxic(toxic) => {
             let old_toxic = toxics
                 .iter_mut()
-                .find(|el| el.get_name() == toxic.get_name())
-                .ok_or(NotFoundError)?;
-            let _ = mem::replace(old_toxic, toxic);
+                .find(|el| el.get_name() == toxic.get_name());
+            if let Some(old_toxic) = old_toxic {
+                let _ = mem::replace(old_toxic, toxic);
+            } else {
+                return Err(ToxicEventKind::UpdateToxic(toxic));
+            }
         }
-        ToxicEventKind::ToxicRemove(toxic_name) => {
+        ToxicEventKind::RemoveToxic(toxic_name) => {
             let index = toxics
                 .iter()
                 .position(|el| el.get_name() == toxic_name)
-                .ok_or(NotFoundError)?;
+                .ok_or(ToxicEventKind::RemoveToxic(toxic_name))?;
             toxics.remove(index);
         }
-        ToxicEventKind::ToxicRemoveAll => {
+        ToxicEventKind::RemoveAllToxics => {
             toxics.clear();
         }
     }
