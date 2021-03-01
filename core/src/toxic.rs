@@ -3,43 +3,45 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::mem;
 
+///
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StreamDirection {
+    /// Represents an I/O channel from server to the client
     #[serde(rename = "downstream")]
     Downstream,
+    /// Represents an I/O channel from the client to the server
     #[serde(rename = "upstream")]
     Upstream,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "attributes")]
+/// Toxic kind and toxic-specific attributes
 pub enum ToxicKind {
+    #[serde(rename = "noop")]
     Noop,
-    Latency {
-        latency: u64,
-        jitter: u64,
-    },
-    Timeout {
-        timeout: u64,
-    },
-    Bandwidth {
-        rate: u64,
-    },
-    SlowClose {
-        delay: u64,
-    },
+    #[serde(rename = "latency")]
+    Latency { latency: u64, jitter: u64 },
+    #[serde(rename = "timeout")]
+    Timeout { timeout: u64 },
+    #[serde(rename = "bandwidth")]
+    Bandwidth { rate: u64 },
+    #[serde(rename = "slow_close")]
+    SlowClose { delay: u64 },
+    #[serde(rename = "slicer")]
     Slicer {
         average_size: u64,
         size_variation: u64,
         delay: u64,
     },
-    LimitData {
-        bytes: u64,
-    },
+    #[serde(rename = "limit_data")]
+    LimitData { bytes: u64 },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Toxic {
-    pub(crate) kind: ToxicKind,            // json: type | attributes
+    #[serde(flatten)]
+    pub(crate) kind: ToxicKind, // json: type | attributes
     pub(crate) name: String,               // json: name
     pub(crate) toxicity: f32,              // json: toxicity
     pub(crate) direction: StreamDirection, // excluded from json
@@ -183,5 +185,78 @@ impl fmt::Display for ToxicKind {
                 write!(f, "LimitData({})", bytes)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod serde_tests {
+    use super::*;
+    use serde_json::{from_str, to_string, Error as SerdeError};
+
+    #[test]
+    fn test_noop() {
+        let toxic = Toxic {
+            kind: ToxicKind::Noop,
+            name: "foo".to_owned(),
+            toxicity: 0.67,
+            direction: StreamDirection::Downstream,
+        };
+        let serialized = to_string(&toxic).unwrap();
+        let expected =
+            "{\"type\":\"noop\",\"name\":\"foo\",\"toxicity\":0.67,\"direction\":\"downstream\"}";
+        assert_eq!(expected, serialized);
+
+        let deserialized = from_str(&serialized).unwrap();
+        assert_eq!(toxic, deserialized);
+    }
+
+    #[test]
+    fn test_latency() {
+        let toxic = Toxic {
+            kind: ToxicKind::Latency {
+                latency: 4321,
+                jitter: 5,
+            },
+            name: "lat".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+        let serialized = to_string(&toxic).unwrap();
+        let expected =
+            "{\"type\":\"latency\",\"attributes\":{\"latency\":4321,\"jitter\":5},\"name\":\"lat\",\"toxicity\":1.0,\"direction\":\"upstream\"}";
+        assert_eq!(expected, serialized);
+
+        let deserialized = from_str(&serialized).unwrap();
+        assert_eq!(toxic, deserialized);
+    }
+
+    #[test]
+    fn test_toxicity_de_int() {
+        let input =
+            "{\"type\":\"noop\",\"name\":\"foo\",\"toxicity\":1,\"direction\":\"downstream\"}";
+        let deserialized = from_str(&input).unwrap();
+        let expected = Toxic {
+            kind: ToxicKind::Noop,
+            name: "foo".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Downstream,
+        };
+        assert_eq!(expected, deserialized);
+    }
+
+    #[test]
+    fn test_latency_de_negative() {
+        let input_ok =
+            "{\"type\":\"latency\",\"attributes\":{\"latency\":21,\"jitter\":0},\"name\":\"lat\",\"toxicity\":1,\"direction\":\"downstream\"}";
+        let input_err =
+            "{\"type\":\"latency\",\"attributes\":{\"latency\":-21,\"jitter\":0},\"name\":\"lat\",\"toxicity\":1,\"direction\":\"downstream\"}";
+        let deserialized_ok: Result<Toxic, SerdeError> = from_str(&input_ok);
+        let deserialized_err: Result<Toxic, SerdeError> = from_str(&input_err);
+
+        assert_eq!(true, deserialized_ok.is_ok());
+        assert_eq!(
+            "invalid value: integer `-21`, expected u64 at line 1 column 109",
+            deserialized_err.unwrap_err().to_string()
+        );
     }
 }

@@ -3,14 +3,20 @@ use std::io;
 use thiserror::Error;
 use warp::http::StatusCode;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResourceKind {
+    Toxic,
+    Proxy,
+}
+
 #[derive(Debug, Clone, Error, PartialEq)]
 pub enum StoreError {
     #[error("Missing required field")]
     InvalidProxyConfig(ProxyValidateError),
     #[error("An item with this name already exists")]
     AlreadyExists,
-    #[error("Item not found")]
-    NotFound,
+    #[error("{0} not found")]
+    NotFound(ResourceKind),
     #[error("I/O error: {0:?}")]
     IoError(io::ErrorKind),
     #[error("Internal server error")]
@@ -22,7 +28,7 @@ impl From<StoreError> for StatusCode {
         match err {
             StoreError::InvalidProxyConfig(..) => StatusCode::BAD_REQUEST,
             StoreError::AlreadyExists => StatusCode::CONFLICT,
-            StoreError::NotFound => StatusCode::NOT_FOUND,
+            StoreError::NotFound(..) => StatusCode::NOT_FOUND,
             StoreError::IoError(..) | StoreError::Other => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -37,5 +43,14 @@ impl From<io::Error> for StoreError {
 impl From<ProxyValidateError> for StoreError {
     fn from(err: ProxyValidateError) -> Self {
         StoreError::InvalidProxyConfig(err)
+    }
+}
+
+impl std::fmt::Display for ResourceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResourceKind::Toxic => write!(f, "toxic"),
+            ResourceKind::Proxy => write!(f, "proxy"),
+        }
     }
 }

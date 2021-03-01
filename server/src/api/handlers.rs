@@ -1,9 +1,9 @@
 use crate::{
     error::StoreError,
-    store::{SerializableToxic, Store},
+    store::Store,
     util,
 };
-use noxious::proxy::ProxyConfig;
+use noxious::{proxy::ProxyConfig, toxic::Toxic};
 use responses::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -51,7 +51,7 @@ pub async fn create_proxy(proxy: ProxyConfig, store: Store) -> Result<impl Reply
 }
 
 pub async fn get_proxy(name: String, store: Store) -> Result<impl Reply, Infallible> {
-    wrap_store_result(async move { store.get_proxy(name).await }).await
+    wrap_store_result(async move { store.get_proxy(&name).await }).await
 }
 
 pub async fn update_proxy(
@@ -63,7 +63,7 @@ pub async fn update_proxy(
 }
 
 pub async fn remove_proxy(name: String, store: Store) -> Result<impl Reply, Infallible> {
-    wrap_store_result_no_content(async move { store.remove_proxy(name).await }).await
+    wrap_store_result_no_content(async move { store.remove_proxy(&name).await }).await
 }
 
 pub async fn get_toxics(proxy_name: String, store: Store) -> Result<impl Reply, Infallible> {
@@ -72,7 +72,7 @@ pub async fn get_toxics(proxy_name: String, store: Store) -> Result<impl Reply, 
 
 pub async fn create_toxic(
     proxy_name: String,
-    toxic: SerializableToxic,
+    toxic: Toxic,
     store: Store,
 ) -> Result<impl Reply, Infallible> {
     wrap_store_result(async move { store.create_toxic(proxy_name, toxic).await }).await
@@ -89,7 +89,7 @@ pub async fn get_toxic(
 pub async fn update_toxic(
     proxy_name: String,
     toxic_name: String,
-    new_toxic: SerializableToxic,
+    new_toxic: Toxic,
     store: Store,
 ) -> Result<impl Reply, Infallible> {
     wrap_store_result(async move { store.update_toxic(proxy_name, toxic_name, new_toxic).await })

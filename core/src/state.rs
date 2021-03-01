@@ -30,10 +30,10 @@ pub struct ProxyStateInner {
 /// The config is immutable, but the state is behind a mutex.
 #[derive(Debug, Clone)]
 pub struct SharedProxyInfo {
-    /// The current proxy state containing the current collection of toxics and the connected clients
-    pub state: Arc<ProxyState>,
     /// The immutable essential proxy config, like the proxy name, upstream and downstream addresses
     pub config: Arc<ProxyConfig>,
+    /// The current proxy state containing the current collection of toxics and the connected clients
+    pub state: Arc<ProxyState>,
 }
 
 impl ProxyState {
