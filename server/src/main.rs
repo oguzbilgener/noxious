@@ -1,16 +1,14 @@
-// use crate::store::{ProxyEvent, ProxyEventResult, Store};
-use bmrng::{channel, RequestSender};
-use noxious::toxic::{ToxicEvent, ToxicEventKind};
-use noxious::{error::NotFoundError, signal::Stop};
+use noxious::signal::Stop;
 use std::net::SocketAddr;
 use std::{default::Default, net::IpAddr};
 use tokio::signal;
 use tracing::{debug, error, info, instrument};
 
-use crate::store::Store;
+use crate::{file::populate_initial_proxy_configs, store::Store};
 
 mod api;
 mod error;
+mod file;
 mod store;
 mod util;
 
@@ -52,28 +50,17 @@ async fn main() {
 
     // TODO: parse the command line args
 
-    let args = Args::default();
+    let mut args = Args::default();
+    args.config_file_path = Some("toxiproxy.json".to_owned());
 
     let (stop, stopper) = Stop::new();
 
     let store = Store::new(stop.clone());
 
-    let file_name = "foo.json";
-
-    // TODO: parse the json file, deserialize all toxics
-    let proxy_configs = Vec::new();
-
-    match store.populate(proxy_configs).await {
-        Ok(proxies) => {
-            info!(
-                config = file_name,
-                proxies = proxies.len(),
-                "Populated proxies from file"
-            );
-        }
-        Err(err) => {
-            error!(err = ?err, file_name, "Failed populate proxies from file");
-        }
+    if let Some(config_file_path) = &args.config_file_path {
+        populate_initial_proxy_configs(config_file_path, store.clone());
+    } else {
+        debug!("No config file path provided");
     }
 
     tokio::spawn(async move {

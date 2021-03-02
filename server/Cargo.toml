@@ -5,9 +5,10 @@ authors = ["Oguz Bilgener <oguz@bilgener.me>"]
 edition = "2018"
 
 [dependencies]
+noxious = { path = "../core" }
 tokio = { version = "1", features = ["macros", "sync", "net", "rt-multi-thread", "signal"] }
 futures = { version = "0.3.12" }
-noxious = { path = "../core" }
+bytes = "1.0.1"
 serde_json = "^1.0.62"
 serde = { version = "^1.0.123", features = ["derive"] }
 warp = "0.3.0"
@@ -18,4 +19,3 @@ log = "0.4.14"
 pretty_env_logger = "0.4.0"
 bmrng = "0.4.0"
 thiserror = "1.0.24"
-

@@ -82,7 +82,7 @@ impl Store {
         Ok(())
     }
 
-    #[instrument]
+    #[instrument(level="trace")]
     pub async fn populate(&self, input: Vec<ProxyConfig>) -> Result<Vec<ProxyWithToxics>> {
         for config in &input {
             if let Err(err) = config.validate() {
@@ -128,7 +128,7 @@ impl Store {
         Ok(proxies_with_toxics)
     }
 
-    #[instrument]
+    #[instrument(level="trace")]
     pub async fn get_proxies(&self) -> Result<Vec<ProxyWithToxics>> {
         let state = self.shared.get_state();
         Ok(state
@@ -138,13 +138,13 @@ impl Store {
             .collect())
     }
 
-    #[instrument]
+    #[instrument(level="trace")]
     pub async fn create_proxy(&self, config: ProxyConfig) -> Result<ProxyWithToxics> {
         let shared_proxy_info = self.shared.create_proxy(config).await?;
         Ok(ProxyWithToxics::from_shared_proxy_info(shared_proxy_info))
     }
 
-    #[instrument]
+    #[instrument(level="trace")]
     pub async fn get_proxy(&self, proxy_name: &str) -> Result<ProxyWithToxics> {
         let state = self.shared.get_state();
         let proxy = state
@@ -154,7 +154,7 @@ impl Store {
         Ok(ProxyWithToxics::from_shared_proxy_info(proxy.info.clone()))
     }
 
-    #[instrument]
+    #[instrument(level="trace")]
     pub async fn update_proxy(
         &self,
         proxy_name: String,
@@ -165,13 +165,13 @@ impl Store {
         Ok(ProxyWithToxics::from_shared_proxy_info(shared_proxy_info))
     }
 
-    #[instrument]
+    #[instrument(level="trace")]
     pub async fn remove_proxy(&self, proxy_name: &str) -> Result<()> {
         self.shared.remove_proxy(proxy_name).await?;
         Ok(())
     }
 
-    #[instrument]
+    #[instrument(level="trace")]
     pub async fn create_toxic(&self, proxy_name: String, toxic: Toxic) -> Result<Toxic> {
         let sender = self
             .shared
@@ -196,7 +196,7 @@ impl Store {
         }
     }
 
-    #[instrument]
+    #[instrument(level="trace")]
     pub async fn get_toxics(&self, proxy_name: &str) -> Result<Vec<Toxic>> {
         Ok(self
             .shared
@@ -212,7 +212,7 @@ impl Store {
             .into_vec())
     }
 
-    #[instrument]
+    #[instrument(level="trace")]
     pub async fn get_toxic(&self, proxy_name: &str, toxic_name: &str) -> Result<Toxic> {
         self.shared
             .get_state()
@@ -227,7 +227,7 @@ impl Store {
             .ok_or(StoreError::NotFound(ResourceKind::Toxic))
     }
 
-    #[instrument]
+    #[instrument(level="trace")]
     pub async fn update_toxic(
         &self,
         proxy_name: String,
@@ -257,7 +257,7 @@ impl Store {
         }
     }
 
-    #[instrument]
+    #[instrument(level="trace")]
     pub async fn remove_toxic(&self, proxy_name: String, toxic_name: String) -> Result<()> {
         let sender = self.shared.get_event_sender_for_proxy(&proxy_name)?;
 
@@ -285,7 +285,7 @@ impl Shared {
         }
     }
 
-    #[instrument]
+    #[instrument(level="trace")]
     fn get_state(&self) -> MutexGuard<State> {
         self.state
             .lock()

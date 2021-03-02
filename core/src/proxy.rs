@@ -1,5 +1,5 @@
 use crate::{
-    error::{NotFoundError, ToxicUpdateError},
+    error::NotFoundError,
     link::Link,
     signal::Stop,
     state::{ProxyState, SharedProxyInfo, ToxicStateHolder},
@@ -16,7 +16,7 @@ use std::{io, mem};
 use thiserror::Error;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
-use tracing::{error, info, instrument};
+use tracing::{debug, error, info, instrument};
 
 /// The default Go io.Copy buffer size is 32K, so also use 32K buffers here to imitate Toxiproxy.
 const READ_BUFFER_SIZE: usize = 32768;
@@ -124,7 +124,7 @@ pub async fn initialize_proxy(
 }
 
 /// TODO
-#[instrument]
+#[instrument(level = "trace")]
 pub async fn run_proxy(
     listener: TcpListener,
     proxy_info: SharedProxyInfo,
@@ -265,7 +265,7 @@ fn create_links(
         links_stopper.stop();
         let mut state = state.lock();
         state.clients.remove(&addr);
-        println!("Removed {}", addr);
+        debug!("Removed {}", addr);
     });
 
     current_state.clients.insert(
