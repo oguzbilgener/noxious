@@ -367,6 +367,7 @@ impl State {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxyWithToxics {
+    #[serde(flatten)]
     pub proxy: ProxyConfig,
     pub toxics: Vec<Toxic>,
 }

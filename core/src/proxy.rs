@@ -111,7 +111,7 @@ pub async fn initialize_proxy(
 ) -> io::Result<(TcpListener, SharedProxyInfo)> {
     let listener = TcpListener::bind(&config.listen).await?;
 
-    info!("listening on port {}", &config.listen);
+    info!(name = ?config.name, proxy = ?config.listen, upstream = ?config.upstream, "Started proxy");
 
     let state = Arc::new(ProxyState::new(initial_toxics));
 
