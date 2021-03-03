@@ -29,6 +29,7 @@ pub fn populate(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejec
 pub fn get_proxies(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::get()
         .and(warp::path("proxies"))
+        .and(warp::path::end())
         .and(util::add_store(store))
         .and_then(handlers::get_proxies)
 }
@@ -37,6 +38,7 @@ pub fn get_proxies(store: Store) -> impl Filter<Extract = impl Reply, Error = Re
 pub fn create_proxy(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::post()
         .and(warp::path("proxies"))
+        .and(warp::path::end())
         .and(util::parse_body())
         .and(util::add_store(store))
         .and_then(handlers::create_proxy)
@@ -47,6 +49,7 @@ pub fn get_proxy(store: Store) -> impl Filter<Extract = impl Reply, Error = Reje
     warp::get()
         .and(warp::path("proxies"))
         .and(warp::path::param())
+        .and(warp::path::end())
         .and(util::add_store(store))
         .and_then(handlers::get_proxy)
 }
@@ -57,6 +60,7 @@ pub fn update_proxy(store: Store) -> impl Filter<Extract = impl Reply, Error = R
     warp::post()
         .and(warp::path("proxies"))
         .and(warp::path::param())
+        .and(warp::path::end())
         .and(util::parse_body())
         .and(util::add_store(store))
         .and_then(handlers::update_proxy)
@@ -67,6 +71,7 @@ pub fn remove_proxy(store: Store) -> impl Filter<Extract = impl Reply, Error = R
     warp::delete()
         .and(warp::path("proxies"))
         .and(warp::path::param())
+        .and(warp::path::end())
         .and(util::add_store(store))
         .and_then(handlers::remove_proxy)
 }
@@ -76,6 +81,8 @@ pub fn get_toxics(store: Store) -> impl Filter<Extract = impl Reply, Error = Rej
     warp::get()
         .and(warp::path("proxies"))
         .and(warp::path::param())
+        .and(warp::path("toxics"))
+        .and(warp::path::end())
         .and(util::add_store(store))
         .and_then(handlers::get_toxics)
 }
@@ -85,6 +92,8 @@ pub fn create_toxic(store: Store) -> impl Filter<Extract = impl Reply, Error = R
     warp::post()
         .and(warp::path("proxies"))
         .and(warp::path::param())
+        .and(warp::path("toxics"))
+        .and(warp::path::end())
         .and(util::parse_body())
         .and(util::add_store(store))
         .and_then(handlers::create_toxic)
@@ -97,6 +106,7 @@ pub fn get_toxic(store: Store) -> impl Filter<Extract = impl Reply, Error = Reje
         .and(warp::path::param())
         .and(warp::path("toxics"))
         .and(warp::path::param())
+        .and(warp::path::end())
         .and(util::add_store(store))
         .and_then(handlers::get_toxic)
 }
@@ -108,6 +118,7 @@ pub fn update_toxic(store: Store) -> impl Filter<Extract = impl Reply, Error = R
         .and(warp::path::param())
         .and(warp::path("toxics"))
         .and(warp::path::param())
+        .and(warp::path::end())
         .and(util::parse_body())
         .and(util::add_store(store))
         .and_then(handlers::update_toxic)
@@ -120,6 +131,7 @@ pub fn remove_toxic(store: Store) -> impl Filter<Extract = impl Reply, Error = R
         .and(warp::path::param())
         .and(warp::path("toxics"))
         .and(warp::path::param())
+        .and(warp::path::end())
         .and(util::add_store(store))
         .and_then(handlers::remove_toxic)
 }
