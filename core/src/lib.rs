@@ -34,11 +34,3 @@ mod stream;
 /// Contains the toxic data types
 pub mod toxic;
 mod toxics;
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}

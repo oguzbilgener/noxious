@@ -1,8 +1,16 @@
 [package]
 name = "noxious"
+description = "The core library for noxious, a Rust port of Toxiproxy"
 version = "0.1.0"
 authors = ["Oguz Bilgener <oguz@bilgener.me>"]
+repository = "https://github.com/oguzbilgener/noxious"
 edition = "2018"
+license = "MIT OR Apache-2.0"
+categories = ["network-programming", "development-tools"]
+keywords = ["proxy", "toxiproxy", "chaos", "tcp"]
+
+[badges]
+maintenance = { status = "actively-developed" }
 
 [dependencies]
 tokio = { version = "1", features = ["net", "sync", "signal", "io-util", "rt", "macros", "time"] }
