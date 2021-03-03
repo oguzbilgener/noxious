@@ -39,6 +39,7 @@ pub struct Shared {
     state: Mutex<State>,
     next_proxy_id: AtomicUsize,
     stop: Stop,
+    rand_seed: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -54,9 +55,9 @@ pub struct Store {
 type Result<T> = core::result::Result<T, StoreError>;
 
 impl Store {
-    pub fn new(stop: Stop) -> Self {
+    pub fn new(stop: Stop, rand_seed: Option<u64>) -> Self {
         Store {
-            shared: Arc::new(Shared::new(stop)),
+            shared: Arc::new(Shared::new(stop, rand_seed)),
         }
     }
 
@@ -277,11 +278,12 @@ impl Store {
 }
 
 impl Shared {
-    pub fn new(stop: Stop) -> Self {
+    pub fn new(stop: Stop, rand_seed: Option<u64>) -> Self {
         Shared {
             state: Mutex::new(State::new()),
             next_proxy_id: AtomicUsize::new(0),
             stop,
+            rand_seed,
         }
     }
 
@@ -292,9 +294,13 @@ impl Shared {
             .expect("Failed to lock shared state, poison error")
     }
 
-    async fn create_proxy(self: &Arc<Self>, config: ProxyConfig) -> Result<SharedProxyInfo> {
+    async fn create_proxy(self: &Arc<Self>, mut config: ProxyConfig) -> Result<SharedProxyInfo> {
         if self.get_state().proxy_exists(&config.name) {
             return Err(StoreError::AlreadyExists);
+        }
+        // Inject the rand seed into config, if available
+        if let Some(rand_seed) = self.rand_seed {
+            config.rand_seed = Some(rand_seed);
         }
         let proxy_name = config.name.clone();
         let (listener, proxy_info) = initialize_proxy(config, Toxics::noop()).await?;

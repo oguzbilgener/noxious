@@ -22,7 +22,7 @@ async fn main() {
 
     let (stop, stopper) = Stop::new();
 
-    let store = Store::new(stop.clone());
+    let store = Store::new(stop.clone(), args.seed);
 
     if let Some(config_file_path) = &args.config {
         populate_initial_proxy_configs(config_file_path, store.clone());
