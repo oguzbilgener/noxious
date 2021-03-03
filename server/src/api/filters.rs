@@ -11,6 +11,7 @@ use warp::{Filter, Rejection, Reply};
 pub fn reset(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::post()
         .and(warp::path("reset"))
+        .and(warp::path::end())
         .and(util::empty_body())
         .and(util::add_store(store))
         .and_then(handlers::reset_state)
@@ -20,6 +21,7 @@ pub fn reset(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejectio
 pub fn populate(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::post()
         .and(warp::path("populate"))
+        .and(warp::path::end())
         .and(util::parse_body())
         .and(util::add_store(store))
         .and_then(handlers::populate)

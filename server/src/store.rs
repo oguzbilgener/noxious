@@ -90,19 +90,23 @@ impl Store {
             }
         }
 
-        // Stop the existing proxies with the same name
-        {
+        // Stop and remove the existing proxies with the same name
+        let close_signals: Vec<Close> = {
             let mut state = self.shared.get_state();
             input
                 .iter()
                 .filter_map(|config| state.proxies.remove(&config.name))
-                .for_each(|handle| handle.proxy_stopper.stop());
+                .map(|handle| {
+                    handle.proxy_stopper.stop();
+                    handle.proxy_close
+                })
+                .collect()
+        };
+
+        // Wait for all proxies to close
+        for close in close_signals {
+            let _ = close.recv().await;
         }
-
-        tokio::task::yield_now().await;
-
-        // Since Tokio's `TcpListener::bind` sets the `SO_REUSEADDR` option on the socket,
-        // we probably don't need to wait until the previous proxy's TcpListener is dropped.
 
         let mut created_proxies = Vec::with_capacity(input.len());
 
@@ -173,14 +177,7 @@ impl Store {
 
     #[instrument(level = "trace")]
     pub async fn create_toxic(&self, proxy_name: String, toxic: Toxic) -> Result<Toxic> {
-        let sender = self
-            .shared
-            .get_state()
-            .proxies
-            .get(&proxy_name)
-            .ok_or(StoreError::NotFound(ResourceKind::Proxy))?
-            .event_sender
-            .clone();
+        let sender = self.shared.get_event_sender_for_proxy(&proxy_name)?;
 
         let result = sender
             .send_receive(ToxicEvent::new(
@@ -234,14 +231,7 @@ impl Store {
         toxic_name: String,
         toxic: Toxic,
     ) -> Result<Toxic> {
-        let sender = self
-            .shared
-            .get_state()
-            .proxies
-            .get(&proxy_name)
-            .ok_or(StoreError::NotFound(ResourceKind::Proxy))?
-            .event_sender
-            .clone();
+        let sender = self.shared.get_event_sender_for_proxy(&proxy_name)?;
 
         let result = sender
             .send_receive(ToxicEvent::new(
