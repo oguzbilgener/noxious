@@ -106,14 +106,15 @@ impl Toxics {
     }
 }
 
-/// TODO
+/// Initialize a proxy, bind to a TCP port but don't start accepting clients
+#[instrument(level = "debug", err)]
 pub async fn initialize_proxy(
     config: ProxyConfig,
     initial_toxics: Toxics,
 ) -> io::Result<(TcpListener, SharedProxyInfo)> {
     let listener = TcpListener::bind(&config.listen).await?;
 
-    info!(name = ?config.name, proxy = ?config.listen, upstream = ?config.upstream, "Started proxy");
+    info!(name = ?config.name, proxy = ?config.listen, upstream = ?config.upstream, "Initialized proxy");
 
     let state = Arc::new(ProxyState::new(initial_toxics));
 
@@ -125,8 +126,8 @@ pub async fn initialize_proxy(
     Ok((listener, proxy_info))
 }
 
-/// TODO
-#[instrument(level = "trace")]
+/// Run the initialized proxy, accept clients, establish links
+#[instrument(level = "debug", skip(listener, receiver, stop, closer))]
 pub async fn run_proxy(
     listener: TcpListener,
     proxy_info: SharedProxyInfo,
@@ -153,12 +154,11 @@ pub async fn run_proxy(
         }?;
 
         if let Some((client_stream, addr)) = maybe_connection {
-            debug!(proxy = ?&config.name, "Accepted client {}", addr);
+            debug!(proxy = ?&config, addr = ?&addr, "Accepted client {}", addr);
             let upstream = match TcpStream::connect(&config.upstream).await {
                 Ok(upstream) => upstream,
                 Err(err) => {
-                    // TODO: log details
-                    error!("Unable to open connection to upstream {:?}", err);
+                    error!(err = ?err, proxy = ?&config.name, listen = ?&config.listen, "Unable to open connection to upstream");
                     // This is not a fatal error, can retry next time another client connects
                     continue;
                 }
@@ -190,8 +190,7 @@ pub async fn run_proxy(
             );
             match res {
                 Err(err) => {
-                    // TODO: log arguments
-                    error!("Unable to establish link for proxy {:?}", err);
+                    error!(err = ?err, proxy = ?&config.name, listen = ?&config.listen, "Unable to establish link for proxy");
                     continue;
                 }
                 _ => {}
@@ -202,7 +201,7 @@ pub async fn run_proxy(
     }
     drop(listener);
     let _ = closer.close();
-    debug!(proxy = ?&config.name, listen = ?&config.listen, "shutting down proxy");
+    debug!(proxy = ?&config.name, listen = ?&config.listen, "Shutting down proxy");
     Ok(())
 }
 

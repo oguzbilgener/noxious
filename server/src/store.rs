@@ -15,7 +15,7 @@ use std::{
         Arc, Mutex, MutexGuard,
     },
 };
-use tracing::instrument;
+use tracing::{debug, info, instrument};
 
 const TOXIC_EVENT_BUFFER_SIZE: usize = 2;
 
@@ -322,18 +322,25 @@ impl Shared {
             },
         );
 
-        tokio::spawn(async move {
-            let _ = run_proxy(listener, info, event_receiver, stop, closer).await;
-            // Proxy task ended because of the stop signal, or an I/O error on accept.
-            // So we should self-clean by removing the proxy from the state, if
-            // the proxy in the state with the same name also has the same launch ID.
-            let mut state = shared.get_state();
-            if let Some(proxy_handle) = state.proxies.get(&proxy_name) {
-                if proxy_handle.id == launch_id {
-                    state.proxies.remove(&proxy_name);
+        if info.config.enabled {
+            tokio::spawn(async move {
+                debug!(proxy = ?&info.config, "Starting proxy");
+                let _ = run_proxy(listener, info, event_receiver, stop, closer).await;
+                // Proxy task ended because of the stop signal, or an I/O error on accept.
+                // So we should self-clean by removing the proxy from the state, if
+                // the proxy in the state with the same name also has the same launch ID.
+                let mut state = shared.get_state();
+                if let Some(proxy_handle) = state.proxies.get(&proxy_name) {
+                    if proxy_handle.id == launch_id {
+                        state.proxies.remove(&proxy_name);
+                    }
                 }
-            }
-        });
+            });
+        } else {
+            info!(proxy = ?&info.config, "Added disabled proxy");
+            // Make this proxy good to remove immediately
+            let _ = closer.close();
+        }
 
         Ok(proxy_info)
     }
@@ -343,7 +350,9 @@ impl Shared {
         let maybe_handle = self.get_state().proxies.remove(proxy_name);
         if let Some(handle) = maybe_handle {
             handle.proxy_stopper.stop();
+            debug!(proxy = ?&handle.info.config, "Sent proxy stop signal, waiting for the close signal");
             let _ = handle.proxy_close.recv().await;
+            debug!(proxy = ?&handle.info.config, "Received the close signal");
             Ok(handle.info)
         } else {
             Err(StoreError::NotFound(ResourceKind::Proxy))
