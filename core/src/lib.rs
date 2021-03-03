@@ -21,12 +21,17 @@
 
 //! # noxious
 
+/// Contains the errors
 pub mod error;
 mod link;
+/// Contains the proxy data types and runners
 pub mod proxy;
+/// Contains the Stop and Close signals
 pub mod signal;
+/// Contains the shared proxy and toxic state
 pub mod state;
 mod stream;
+/// Contains the toxic data types
 pub mod toxic;
 mod toxics;
 

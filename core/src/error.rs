@@ -1,14 +1,17 @@
-use std::io;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+/// Generic not found error
+#[derive(Error, Debug, Clone, Copy)]
 #[error("Item not found")]
 pub struct NotFoundError;
 
-#[derive(Debug, Clone, Error, PartialEq)]
+/// Toxic update failed
+#[derive(Debug, Clone, Copy, Error, PartialEq)]
 pub enum ToxicUpdateError {
+    /// No such toxic with the given name
     #[error("Toxic not found")]
     NotFound,
+    /// Some other error
     #[error("Other error")]
     Other,
 }

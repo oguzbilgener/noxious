@@ -1,4 +1,4 @@
-use crate::error::{NotFoundError, ToxicUpdateError};
+use crate::error::ToxicUpdateError;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::mem;
@@ -18,26 +18,54 @@ pub enum StreamDirection {
 #[serde(tag = "type", content = "attributes")]
 /// Toxic kind and toxic-specific attributes
 pub enum ToxicKind {
+    /// Passes all data through without any toxic effects
     #[serde(rename = "noop")]
     Noop,
+    /// Passes data through with the a delay of latency +/- jitter added
     #[serde(rename = "latency")]
-    Latency { latency: u64, jitter: u64 },
+    Latency {
+        /// Latency to be added, in milliseconds
+        latency: u64,
+        /// Jitter to be added to the latency, also in milliseconds
+        jitter: u64,
+    },
+    /// Stops any data from flowing through, and will close the connection after a timeout
     #[serde(rename = "timeout")]
-    Timeout { timeout: u64 },
+    Timeout {
+        /// in milliseconds
+        timeout: u64,
+    },
+    /// Passes data through at a limited rate
     #[serde(rename = "bandwidth")]
-    Bandwidth { rate: u64 },
+    Bandwidth {
+        /// in KB/S
+        rate: u64,
+    },
+    /// Stops the TCP connection from closing until after a delay
     #[serde(rename = "slow_close")]
-    SlowClose { delay: u64 },
-    #[serde(rename = "slicer")]
-    Slicer {
-        average_size: u64,
-        size_variation: u64,
+    SlowClose {
+        /// in milliseconds
         delay: u64,
     },
+    /// Slices data into multiple smaller packets
+    #[serde(rename = "slicer")]
+    Slicer {
+        /// Average number of bytes to slice at
+        average_size: u64,
+        /// +/- bytes to vary sliced amounts. Must be less than the average size
+        size_variation: u64,
+        /// Microseconds to delay each packet.
+        delay: u64,
+    },
+    /// Adds a limit of bytes transferred to the proxy session
     #[serde(rename = "limit_data")]
-    LimitData { bytes: u64 },
+    LimitData {
+        /// the limit
+        bytes: u64,
+    },
 }
 
+/// Something that can be attached to alink to modify the way the data is passed through
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Toxic {
     #[serde(flatten)]
@@ -48,20 +76,27 @@ pub struct Toxic {
     pub(crate) direction: StreamDirection,
 }
 
+/// The inners of a proxy state update event passed to the proxy runner task
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToxicEventKind {
+    /// Add a new toxic to a proxy
     AddToxic(Toxic),
+    /// Replace a toxic with the same name with this new toxic
     UpdateToxic(Toxic),
+    /// Remove a toxic by name
     RemoveToxic(String),
+    /// Reset. Remove all toxics
     RemoveAllToxics,
 }
 
+/// A proxy state update event passed to the proxy runner task
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToxicEvent {
     pub(super) proxy_name: String,
     pub(super) kind: ToxicEventKind,
 }
 
+/// The result return after the toxic event is processed. May return Ok or ToxicUpdateError
 pub type ToxicEventResult = Result<(), ToxicUpdateError>;
 
 impl fmt::Display for StreamDirection {
@@ -80,14 +115,14 @@ impl PartialEq for Toxic {
 }
 
 impl Toxic {
-    /// TODO
+    /// Get the toxic name
     pub fn get_name(&self) -> &str {
         &self.name
     }
 }
 
 impl ToxicEvent {
-    /// TODO
+    /// Create a new toxic event
     pub fn new(proxy_name: String, kind: ToxicEventKind) -> Self {
         ToxicEvent { proxy_name, kind }
     }

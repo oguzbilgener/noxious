@@ -1,7 +1,12 @@
 use thiserror::Error;
 use tokio::sync::{broadcast, watch};
+use tracing::instrument;
 
-/// TODO
+/// The receiver for the stop signal, which can be used to indicate that
+/// a part, or all of the system is required to shut down.
+/// This stop handle can be cloned to pass the signal to multiple async tasks,
+/// and it can be forked to let child tasks have their own stop logic in addition
+/// to the parent system  stop logic.
 #[derive(Debug)]
 pub struct Stop {
     stopped: bool,
@@ -10,7 +15,7 @@ pub struct Stop {
 }
 
 impl Stop {
-    /// TODO
+    /// Create a new Stop and Stopper
     pub fn new() -> (Stop, Stopper) {
         let (sender, receiver) = broadcast::channel::<()>(1);
         let stopper = Stopper::new(sender.clone());
@@ -22,12 +27,14 @@ impl Stop {
         (stop, stopper)
     }
 
-    /// TODO
+    /// Check if this particular instance of Stop has received a stop signal.
+    /// Note: Only use this in conjunction with `recv`, because if this instance
+    /// of Stop does not receive the signal, this will return false.
     pub fn stop_received(&self) -> bool {
         self.stopped
     }
 
-    /// TODO
+    /// Wait for the stop signal to be received
     pub async fn recv(&mut self) {
         if self.stopped {
             return;
@@ -82,42 +89,49 @@ impl std::fmt::Display for Stop {
     }
 }
 
-/// TODO
+/// A handle that can send a stop signal once to all subscribers
 #[derive(Debug, Clone)]
 pub struct Stopper {
     sender: broadcast::Sender<()>,
 }
 
 impl Stopper {
-    /// TODO
-    pub fn new(sender: broadcast::Sender<()>) -> Self {
+    pub(crate) fn new(sender: broadcast::Sender<()>) -> Self {
         Self { sender }
     }
 
-    /// TODO: trace
+    /// Sends the stop signal
+    #[instrument(level = "trace", skip(self))]
     pub fn stop(self) {
         let _ = self.sender.send(());
     }
 }
+/// A receiver for the close signal, which is used to indicate that a resource
+/// is ready to close
 #[derive(Debug, Clone)]
 pub struct Close {
     receiver: watch::Receiver<Option<()>>,
 }
 
+/// The sender for the close signal, to indicate that the owner of this closer
+/// is ready to close
 #[derive(Debug)]
 pub struct Closer {
     sender: watch::Sender<Option<()>>,
 }
 
-#[derive(Error, Debug)]
+/// The listen channel closed before the close signal was received
+#[derive(Error, Copy, Clone, Debug)]
 #[error("Close channel closed")]
 pub struct CloseError;
 
-#[derive(Error, Debug)]
+/// Could not snd the close signal, listener for close dropped
+#[derive(Error, Copy, Clone, Debug)]
 #[error("Could not close, already closed?")]
 pub struct CloserError;
 
 impl Close {
+    /// Create a new Close and Closer
     pub fn new() -> (Close, Closer) {
         let (sender, receiver) = watch::channel(None);
         let close = Close { receiver };
@@ -125,12 +139,14 @@ impl Close {
         (close, closer)
     }
 
+    /// Wait for the close signal
     pub async fn recv(mut self) -> Result<(), CloseError> {
         self.receiver.changed().await.map_err(|_| CloseError)
     }
 }
 
 impl Closer {
+    /// Send the close signal and consume this closer
     pub fn close(self) -> Result<(), CloseError> {
         self.sender.send(Some(())).map_err(|_| CloseError)
     }

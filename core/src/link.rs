@@ -75,7 +75,7 @@ impl Link {
         tokio::spawn(async move {
             if !stop.stop_received() {
                 let forward_res = forward(&mut reader, &mut writer, &mut stop).await;
-                if let Err(err) = forward_res {
+                if let Err(_) = forward_res {
                     // TODO: maybe log this error in case it's a specific I/O error.
                 }
             }

@@ -11,13 +11,13 @@ use crate::{
     toxic::{Toxic, ToxicKind},
 };
 
-/// TODO
+/// The wrapper for the proxy state
 #[derive(Debug)]
 pub struct ProxyState {
     inner: Mutex<ProxyStateInner>,
 }
 
-/// TODO
+/// The inner state of proxy, holding the list of connected clients and currently active toxics
 #[derive(Debug)]
 pub struct ProxyStateInner {
     /// Socket address -> (Upstream, Downstream)

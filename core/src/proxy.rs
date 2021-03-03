@@ -330,8 +330,8 @@ async fn process_toxic_event(
         mem::replace(&mut current_state.clients, HashMap::new())
     };
 
-    let mut elements = stream::iter(old_map);
-    while let Some((addr, links)) = elements.next().await {
+    let mut clients = stream::iter(old_map);
+    while let Some((addr, links)) = clients.next().await {
         if let Err(err) = recreate_links(
             state.clone(),
             &config,
@@ -379,12 +379,16 @@ fn update_toxics(event: ToxicEvent, toxics: &mut Toxics) -> Result<(), NotFoundE
         .or(Err(NotFoundError))
 }
 
-#[derive(Debug, Clone, Error, PartialEq)]
+/// Errors return when ProxyConfig validation fails
+#[derive(Debug, Clone, Copy, Error, PartialEq)]
 pub enum ProxyValidateError {
+    /// The name field is empty
     #[error("name missing")]
     MissingName,
+    /// The upstream field is empty
     #[error("upstream missing")]
     MissingUpstream,
+    /// The listen field is empty
     #[error("listen address missing")]
     MissingListen,
 }

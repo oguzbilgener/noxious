@@ -109,9 +109,3 @@ impl From<ApiErrorResponse> for Response {
         with_status(json_reply(&resp), resp.code).into_response()
     }
 }
-
-#[derive(Debug, Clone, Error, PartialEq)]
-pub enum ProxyEventError {
-    #[error("{0} not found")]
-    NotFound(ResourceKind),
-}
