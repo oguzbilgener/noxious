@@ -1,27 +1,30 @@
 use crate::store::Store;
 use crate::util;
 use noxious::signal::Stop;
-use std::net::SocketAddr;
+use std::{convert::Infallible, net::SocketAddr};
 use tracing::{debug, info};
-use warp::{Filter, Rejection, Reply};
+use warp::{Filter, Reply};
 
 // rest api
 mod filters;
 mod handlers;
 
-fn make_filters(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn make_filters(store: Store) -> impl Filter<Extract = impl Reply, Error = Infallible> + Clone {
     use filters::*;
 
     disallow_browsers()
         .or(reset(store.clone())
             .or(populate(store.clone()))
             .or(version()))
-        .or(get_proxies(store.clone()).or(create_proxy(store.clone()).or(get_proxy(store.clone()))))
-        .or(update_proxy(store.clone()).or(remove_proxy(store.clone())))
-        .or(get_toxics(store.clone())
-            .or(create_toxic(store.clone()))
-            .or(update_toxic(store.clone())))
-        .or(get_toxic(store.clone()).or(remove_toxic(store.clone())))
+        .or(get_toxic(store.clone())
+            .or(update_toxic(store.clone()))
+            .or(create_toxic(store.clone())))
+        .or(remove_toxic(store.clone()).or(get_toxics(store.clone())))
+        .or(create_proxy(store.clone()).or(get_proxy(store.clone())))
+        .or(update_proxy(store.clone())
+            .or(remove_proxy(store.clone()))
+            .or(get_proxies(store.clone())))
+        .recover(handle_errors)
 }
 
 /// Serve the API server

@@ -43,6 +43,7 @@ fn default_enabled() -> bool {
     true
 }
 
+/// A holder for upstream and downstream links, as well as the per-connection state
 #[derive(Debug)]
 pub struct Links {
     upstream: Link,
@@ -91,6 +92,7 @@ impl Toxics {
         self.upstream
     }
 
+    /// Find a toxic by name in upstream and downstream lists
     pub fn find_by_name(&self, toxic_name: &str) -> Option<Toxic> {
         self.upstream
             .iter()
@@ -339,6 +341,7 @@ async fn process_toxic_event(
             error!(err = ?err, addr = ?addr, proxy = ?&config.name, "Failed to recreate links for client");
         }
     }
+    let _ = responder.respond(Ok(()));
 }
 
 async fn recreate_links(

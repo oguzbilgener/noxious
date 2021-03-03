@@ -41,10 +41,11 @@ pub enum ToxicKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Toxic {
     #[serde(flatten)]
-    pub(crate) kind: ToxicKind, // json: type | attributes
-    pub(crate) name: String,               // json: name
-    pub(crate) toxicity: f32,              // json: toxicity
-    pub(crate) direction: StreamDirection, // excluded from json
+    pub(crate) kind: ToxicKind,
+    pub(crate) name: String,
+    pub(crate) toxicity: f32,
+    #[serde(alias = "stream")]
+    pub(crate) direction: StreamDirection,
 }
 
 #[derive(Debug, Clone, PartialEq)]
