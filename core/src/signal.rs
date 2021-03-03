@@ -100,8 +100,7 @@ impl Stopper {
     }
 }
 #[derive(Debug, Clone)]
-pub(crate) struct Close {
-    // #[pin]
+pub struct Close {
     receiver: watch::Receiver<Option<()>>,
 }
 
@@ -119,7 +118,7 @@ pub struct CloseError;
 pub struct CloserError;
 
 impl Close {
-    pub(crate) fn new() -> (Close, Closer) {
+    pub fn new() -> (Close, Closer) {
         let (sender, receiver) = watch::channel(None);
         let close = Close { receiver };
         let closer = Closer { sender };

@@ -1,24 +1,21 @@
-use futures::{future::join_all, stream, StreamExt};
+use crate::error::{ResourceKind, StoreError};
+use bmrng::RequestSender;
+use futures::{stream, StreamExt};
+use noxious::{
+    proxy::{initialize_proxy, run_proxy, ProxyConfig, Toxics},
+    signal::{Close, Stop, Stopper},
+    state::SharedProxyInfo,
+    toxic::{Toxic, ToxicEvent, ToxicEventKind, ToxicEventResult},
+};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
-    iter::FromIterator,
+    collections::HashMap,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex, MutexGuard,
     },
 };
-
-use crate::error::{ProxyEventError, ResourceKind, StoreError};
-use bmrng::{channel, error::RequestError, RequestSender};
-use noxious::{
-    error::NotFoundError,
-    proxy::{initialize_proxy, run_proxy, ProxyConfig, Toxics},
-    signal::{Stop, Stopper},
-    state::SharedProxyInfo,
-    toxic::{Toxic, ToxicEvent, ToxicEventKind, ToxicEventResult},
-};
-use tracing::{info, instrument};
+use tracing::instrument;
 
 const TOXIC_EVENT_BUFFER_SIZE: usize = 2;
 
@@ -28,6 +25,8 @@ pub struct ProxyHandle {
     info: SharedProxyInfo,
     /// The stopper handle to send a stop signal to this proxy and all its link tasks
     proxy_stopper: Stopper,
+    /// The close handle used to determine if the proxy listener has been closed
+    proxy_close: Close,
     /// Internal: used to check if two proxy handles are equal
     id: usize,
     /// Proxy-specific event sender
@@ -294,6 +293,7 @@ impl Shared {
             .expect("Failed to lock shared state, poison error")
     }
 
+    #[instrument(level = "debug", skip(self))]
     async fn create_proxy(self: &Arc<Self>, mut config: ProxyConfig) -> Result<SharedProxyInfo> {
         if self.get_state().proxy_exists(&config.name) {
             return Err(StoreError::AlreadyExists);
@@ -307,6 +307,7 @@ impl Shared {
         let info = proxy_info.clone();
         let shared = self.clone();
         let (stop, proxy_stopper) = self.stop.fork();
+        let (proxy_close, closer) = Close::new();
         let (event_sender, event_receiver) = bmrng::channel(TOXIC_EVENT_BUFFER_SIZE);
         let launch_id = shared.next_proxy_id.fetch_add(1, Ordering::Relaxed);
 
@@ -315,13 +316,14 @@ impl Shared {
             ProxyHandle {
                 info: info.clone(),
                 proxy_stopper,
+                proxy_close,
                 id: launch_id,
                 event_sender,
             },
         );
 
         tokio::spawn(async move {
-            let _ = run_proxy(listener, info, event_receiver, stop).await;
+            let _ = run_proxy(listener, info, event_receiver, stop, closer).await;
             // Proxy task ended because of the stop signal, or an I/O error on accept.
             // So we should self-clean by removing the proxy from the state, if
             // the proxy in the state with the same name also has the same launch ID.
@@ -336,9 +338,12 @@ impl Shared {
         Ok(proxy_info)
     }
 
+    #[instrument(level = "debug", skip(self))]
     async fn remove_proxy(self: &Arc<Self>, proxy_name: &str) -> Result<SharedProxyInfo> {
-        if let Some(handle) = self.get_state().proxies.remove(proxy_name) {
+        let maybe_handle = self.get_state().proxies.remove(proxy_name);
+        if let Some(handle) = maybe_handle {
             handle.proxy_stopper.stop();
+            let _ = handle.proxy_close.recv().await;
             Ok(handle.info)
         } else {
             Err(StoreError::NotFound(ResourceKind::Proxy))

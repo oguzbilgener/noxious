@@ -1,7 +1,7 @@
 use crate::{
     error::NotFoundError,
     link::Link,
-    signal::Stop,
+    signal::{Closer, Stop},
     state::{ProxyState, SharedProxyInfo, ToxicStateHolder},
     stream::{Read, Write},
     toxic::{update_toxic_list_in_place, StreamDirection, Toxic, ToxicEvent, ToxicEventResult},
@@ -132,6 +132,7 @@ pub async fn run_proxy(
     proxy_info: SharedProxyInfo,
     receiver: RequestReceiver<ToxicEvent, ToxicEventResult>,
     mut stop: Stop,
+    closer: Closer,
 ) -> io::Result<()> {
     let state = proxy_info.state;
     let config = proxy_info.config;
@@ -152,8 +153,7 @@ pub async fn run_proxy(
         }?;
 
         if let Some((client_stream, addr)) = maybe_connection {
-            // TODO: start a new span
-            info!("Accepted client {}", addr);
+            debug!(proxy = ?&config.name, "Accepted client {}", addr);
             let upstream = match TcpStream::connect(&config.upstream).await {
                 Ok(upstream) => upstream,
                 Err(err) => {
@@ -196,8 +196,13 @@ pub async fn run_proxy(
                 }
                 _ => {}
             }
+        } else {
+            break;
         }
     }
+    drop(listener);
+    let _ = closer.close();
+    debug!(proxy = ?&config.name, listen = ?&config.listen, "shutting down proxy");
     Ok(())
 }
 
