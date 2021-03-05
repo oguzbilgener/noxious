@@ -9,7 +9,7 @@ use warp::http::StatusCode;
 use warp::Reply;
 
 /// Remove all toxics from all proxies
-#[instrument(level="info")]
+#[instrument(level = "info")]
 pub async fn reset_state(store: Store) -> Result<impl Reply, Infallible> {
     if let Err(err) = store.reset_state().await {
         warn!(
@@ -21,13 +21,17 @@ pub async fn reset_state(store: Store) -> Result<impl Reply, Infallible> {
 }
 
 /// Re-populate the toxics from the initial config, return a map of proxies with toxics
-#[instrument(level="info", skip(store))]
+#[instrument(level = "info", skip(store))]
 pub async fn populate(configs: Vec<ProxyConfig>, store: Store) -> Result<impl Reply, Infallible> {
-    wrap_store_result(async move { store.populate(configs).await }).await
+    wrap_store_result_with_status(
+        async move { store.populate(configs).await },
+        StatusCode::CREATED,
+    )
+    .await
 }
 
 /// Get a key-value map of all proxies and their toxics in the system
-#[instrument(level="info", skip(store))]
+#[instrument(level = "info", skip(store))]
 pub async fn get_proxies(store: Store) -> Result<impl Reply, Infallible> {
     let result = store.get_proxies().await.and_then(|pairs| {
         let maybe_map: Result<serde_json::Map<String, JsonValue>, serde_json::Error> = pairs
@@ -40,21 +44,25 @@ pub async fn get_proxies(store: Store) -> Result<impl Reply, Infallible> {
             });
         maybe_map.map_err(|_| StoreError::Other)
     });
-    use_store_result(result)
+    use_store_result(result, StatusCode::OK)
 }
 
 /// Create a proxy, return it if successful
-#[instrument(level="info", skip(store))]
+#[instrument(level = "info", skip(store))]
 pub async fn create_proxy(proxy: ProxyConfig, store: Store) -> Result<impl Reply, Infallible> {
-    wrap_store_result(async move { store.create_proxy(proxy).await }).await
+    wrap_store_result_with_status(
+        async move { store.create_proxy(proxy).await },
+        StatusCode::CREATED,
+    )
+    .await
 }
 
-#[instrument(level="info", skip(store))]
+#[instrument(level = "info", skip(store))]
 pub async fn get_proxy(name: String, store: Store) -> Result<impl Reply, Infallible> {
     wrap_store_result(async move { store.get_proxy(&name).await }).await
 }
 
-#[instrument(level="info", skip(store))]
+#[instrument(level = "info", skip(store))]
 pub async fn update_proxy(
     name: String,
     new_proxy: ProxyConfig,
@@ -63,17 +71,17 @@ pub async fn update_proxy(
     wrap_store_result(async move { store.update_proxy(name, new_proxy).await }).await
 }
 
-#[instrument(level="info", skip(store))]
+#[instrument(level = "info", skip(store))]
 pub async fn remove_proxy(name: String, store: Store) -> Result<impl Reply, Infallible> {
     wrap_store_result_no_content(async move { store.remove_proxy(&name).await }).await
 }
 
-#[instrument(level="info", skip(store))]
+#[instrument(level = "info", skip(store))]
 pub async fn get_toxics(proxy_name: String, store: Store) -> Result<impl Reply, Infallible> {
     wrap_store_result(async move { store.get_toxics(&proxy_name).await }).await
 }
 
-#[instrument(level="info", skip(store))]
+#[instrument(level = "info", skip(store))]
 pub async fn create_toxic(
     proxy_name: String,
     toxic: Toxic,
@@ -82,7 +90,7 @@ pub async fn create_toxic(
     wrap_store_result(async move { store.create_toxic(proxy_name, toxic).await }).await
 }
 
-#[instrument(level="info", skip(store))]
+#[instrument(level = "info", skip(store))]
 pub async fn get_toxic(
     proxy_name: String,
     toxic_name: String,
@@ -91,7 +99,7 @@ pub async fn get_toxic(
     wrap_store_result(async move { store.get_toxic(&proxy_name, &toxic_name).await }).await
 }
 
-#[instrument(level="info", skip(store))]
+#[instrument(level = "info", skip(store))]
 pub async fn update_toxic(
     proxy_name: String,
     toxic_name: String,
@@ -102,7 +110,7 @@ pub async fn update_toxic(
         .await
 }
 
-#[instrument(level="info", skip(store))]
+#[instrument(level = "info", skip(store))]
 pub async fn remove_toxic(
     proxy_name: String,
     toxic_name: String,
@@ -112,7 +120,7 @@ pub async fn remove_toxic(
         .await
 }
 
-#[instrument(level="info")]
+#[instrument(level = "info")]
 pub async fn get_version() -> Result<impl Reply, Infallible> {
     Ok(warp::reply::with_status(
         util::get_version(),
@@ -131,7 +139,14 @@ mod responses {
     pub async fn wrap_store_result(
         f: impl Future<Output = Result<impl Serialize, StoreError>>,
     ) -> Result<impl Reply, Infallible> {
-        use_store_result(f.await)
+        use_store_result(f.await, StatusCode::OK)
+    }
+
+    pub async fn wrap_store_result_with_status(
+        f: impl Future<Output = Result<impl Serialize, StoreError>>,
+        status_code: StatusCode,
+    ) -> Result<impl Reply, Infallible> {
+        use_store_result(f.await, status_code)
     }
 
     pub async fn wrap_store_result_no_content(
@@ -142,9 +157,10 @@ mod responses {
 
     pub fn use_store_result(
         result: Result<impl Serialize, StoreError>,
+        status_code: StatusCode,
     ) -> Result<impl Reply, Infallible> {
         match result {
-            Ok(data) => Ok(with_status(json_reply(&data), StatusCode::OK).into_response()),
+            Ok(data) => Ok(with_status(json_reply(&data), status_code).into_response()),
             Err(err) => {
                 let data: ApiErrorResponse = err.into();
                 Ok(data.into())
