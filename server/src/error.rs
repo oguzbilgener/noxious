@@ -32,8 +32,9 @@ pub enum StoreError {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ApiErrorResponse {
+    #[serde(rename = "error")]
     message: String,
-    #[serde(rename = "statusCode")]
+    #[serde(rename = "status")]
     status_code: u16,
     #[serde(skip)]
     pub code: StatusCode,
