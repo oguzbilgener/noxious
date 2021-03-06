@@ -93,7 +93,7 @@ mod tests {
     async fn test_latency(latency: u64, jitter: u64, seed: u64) {
         let (in_stream, mut in_sink) = create_stream_sink();
         let (mut out_stream, out_sink) = create_stream_sink();
-        let data = generate_random_bytes(32);
+        let data = gen_random_bytes(32);
         let expected = Some(data.clone());
         let handle = tokio::spawn(async move {
             run_latency(in_stream, out_sink, latency, jitter, Some(seed)).await

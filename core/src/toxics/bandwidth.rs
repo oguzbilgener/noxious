@@ -54,7 +54,38 @@ pub async fn run_bandwidth(
         if to_sleep.as_millis() > 0 {
             sleep(to_sleep).await;
         }
+        if !chunk.is_empty() {
+            if let Err(_) = output.send(chunk).await {
+                return Err(io::Error::new(
+                    io::ErrorKind::ConnectionReset,
+                    "Write channel closed",
+                ));
+            }
+        }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::toxics::test_utils::*;
+
+    #[tokio::test]
+    async fn passthrough_once() {
+        passthrough_test(|stream, sink| async move { run_bandwidth(stream, sink, 128).await })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn unlimited_passthrough_once() {
+        passthrough_test(|stream, sink| async move { run_bandwidth(stream, sink, 0).await }).await;
+    }
+
+    #[tokio::test]
+    async fn drop_out_channel_first() {
+        drop_out_channel_first_test(|stream, sink| async move { run_bandwidth(stream, sink, 128).await })
+            .await;
+    }
 }

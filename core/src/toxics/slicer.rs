@@ -142,4 +142,20 @@ mod tests {
         })
         .await;
     }
+
+    #[tokio::test]
+    async fn random_seed_variation_passthrough_once() {
+        passthrough_test(|stream, sink| async move {
+            run_slicer(stream, sink, 50, 8, 0, Some(42)).await
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn variation_passthrough_once() {
+        passthrough_test(|stream, sink| async move {
+            run_slicer(stream, sink, 50, 8, 0, None).await
+        })
+        .await;
+    }
 }

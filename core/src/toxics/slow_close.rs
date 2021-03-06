@@ -43,7 +43,7 @@ pub(crate) async fn run_slow_close(
 mod tests {
     use super::*;
     use crate::toxics::test_utils::*;
-    use tokio_test::assert_ok;
+    use tokio_test::{assert_ok, assert_err};
 
     #[tokio::test]
     async fn passthrough_once() {
@@ -58,14 +58,14 @@ mod tests {
 
         let (in_stream, mut in_sink) = create_stream_sink();
         let (out_stream, out_sink) = create_stream_sink();
-        let data = generate_random_bytes(32);
+        let data = gen_random_bytes(32);
         let handle =
             tokio::spawn(async move { run_slow_close(in_stream, out_sink, stop, 0).await });
 
         assert_ok!(in_sink.send(data).await);
         stopper.stop();
         drop(out_stream);
-        assert_ok!(handle.await.unwrap());
+        assert_err!(handle.await.unwrap());
     }
 
 }
