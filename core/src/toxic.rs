@@ -154,15 +154,24 @@ impl ToxicKind {
 pub(super) fn update_toxic_list_in_place(
     toxics: &mut Vec<Toxic>,
     event_kind: ToxicEventKind,
+    direction: StreamDirection,
 ) -> Result<(), ToxicEventKind> {
     match event_kind {
         ToxicEventKind::AddToxic(toxic) => {
-            toxics.push(toxic);
+            if toxic.direction == direction {
+                toxics.push(toxic);
+            } else {
+                return Err(ToxicEventKind::AddToxic(toxic));
+            }
         }
         ToxicEventKind::UpdateToxic(toxic) => {
-            let old_toxic = toxics
+            let old_toxic = if toxic.direction == direction {
+                toxics
                 .iter_mut()
-                .find(|el| el.get_name() == toxic.get_name());
+                .find(|el| el.get_name() == toxic.get_name())
+            } else {
+                None
+            };
             if let Some(old_toxic) = old_toxic {
                 let _ = mem::replace(old_toxic, toxic);
             } else {

@@ -205,6 +205,10 @@ pub async fn run_proxy(
     Ok(())
 }
 
+#[instrument(
+    level = "debug",
+    skip(state, client_read, client_write, upstream_read, upstream_write, stop)
+)]
 fn create_links(
     state: Arc<ProxyState>,
     addr: SocketAddr,
@@ -265,13 +269,19 @@ fn create_links(
     tokio::spawn(async move {
         // No need to listen for the stop signal here, we're ending as soon as one of the tasks have stopped.
         let _ = tokio::select! {
-            up = upstream_handle => up,
-            down = downstream_handle => down
+            up = upstream_handle => {
+                debug!("Upstream joined first");
+                up
+            },
+            down = downstream_handle => {
+                debug!("Downstream joined first");
+                down
+            }
         };
         links_stopper.stop();
         let mut state = state.lock();
         state.clients.remove(&addr);
-        debug!("Removed {}", addr);
+        debug!("Removed client {}", addr);
     });
 
     current_state.clients.insert(
@@ -374,8 +384,10 @@ async fn recreate_links(
 
 /// Update the toxics collection in place
 fn update_toxics(event: ToxicEvent, toxics: &mut Toxics) -> Result<(), NotFoundError> {
-    update_toxic_list_in_place(&mut toxics.upstream, event.kind)
-        .or_else(|kind| update_toxic_list_in_place(&mut toxics.downstream, kind))
+    update_toxic_list_in_place(&mut toxics.upstream, event.kind, StreamDirection::Upstream)
+        .or_else(|kind| {
+            update_toxic_list_in_place(&mut toxics.downstream, kind, StreamDirection::Downstream)
+        })
         .or(Err(NotFoundError))
 }
 
