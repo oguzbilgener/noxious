@@ -27,12 +27,15 @@ pub(crate) async fn run_slow_close(
                     io::ErrorKind::ConnectionReset,
                     "Write channel closed",
                 ));
+                break;
             }
         } else {
             break;
         }
     }
+    tracing::debug!("Slow close sleep for {}", delay);
     sleep(Duration::from_millis(delay)).await;
+    tracing::debug!("Slow close closing {}", delay);
     res
 }
 

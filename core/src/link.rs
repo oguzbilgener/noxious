@@ -17,7 +17,7 @@ use std::{io, sync::Arc};
 use tokio::pin;
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
 use tokio::task::JoinHandle;
-use tracing::debug;
+use tracing::{debug, instrument};
 
 #[derive(Debug)]
 pub(crate) struct Link {
@@ -66,6 +66,7 @@ impl Link {
         }
     }
 
+    #[instrument(level = "debug", skip(self, reader, writer, disband_sender))]
     fn forward_direct(
         &mut self,
         mut reader: Read,
@@ -84,6 +85,7 @@ impl Link {
         })
     }
 
+    #[instrument(level = "debug", skip(self, reader, writer, disband_sender))]
     fn setup_toxics(
         &mut self,
         reader: Read,
@@ -187,35 +189,31 @@ impl Link {
 
         let wait_for_manual_close: Option<Close> =
             self.prepare_manual_close_signals(&mut toxic_runners, override_stop_toxics);
+        let wait_for_manual_close_clone = wait_for_manual_close.clone();
 
-        let wait_for_manual_close_write = wait_for_manual_close.clone();
         let close_read_join = tokio::spawn(async move {
             pin!(left_end_tx);
             let res = forward_read(reader, left_end_tx, &mut stop_read).await;
-            // Speed up closing the underlying connection by closing the other channel,
+            // Speed up closing the underlying connection by closing the other end,
             // unless we should wait for a toxic to yield explicitly.
-            if wait_for_manual_close.is_none() || stop_read.stop_received() {
-                write_stopper.stop();
-            } else if let Some(close) = wait_for_manual_close {
+            if let Some(close) = wait_for_manual_close {
                 toxic_override_stopper.stop();
                 let _ = close.recv().await;
-                write_stopper.stop();
             }
+            write_stopper.stop();
             res
         });
 
         let close_write_join = tokio::spawn(async move {
             pin!(right_end_rx);
             let res = forward_write(right_end_rx, writer, &mut stop_write).await;
-            // Speed up closing the underlying connection by closing the other channel,
+            // Speed up closing the underlying connection by closing the other end,
             // unless we should wait for a toxic to yield explicitly.
-            if wait_for_manual_close_write.is_none() || stop_write.stop_received() {
-                read_stopper.stop();
-            } else if let Some(close) = wait_for_manual_close_write {
+            if let Some(close) = wait_for_manual_close_clone {
                 toxic_override_stopper_clone.stop();
                 let _ = close.recv().await;
-                read_stopper.stop();
             }
+            read_stopper.stop();
             res
         });
         (close_read_join, close_write_join)
@@ -260,6 +258,7 @@ impl Link {
         close_write_join: JoinHandle<io::Result<Write>>,
         disband_sender: oneshot::Sender<Ends>,
     ) -> JoinHandle<()> {
+        let direction = self.direction;
         tokio::spawn(async move {
             let result: Result<(io::Result<Read>, io::Result<Write>), tokio::task::JoinError> =
                 tokio::try_join!(close_read_join, close_write_join);
@@ -268,13 +267,14 @@ impl Link {
                     if let Ok(reader) = read_res {
                         if let Ok(writer) = write_res {
                             let _ = disband_sender.send((reader, writer));
+                            debug!("Joining {} task", direction);
                             return;
                         }
                     }
-                    panic!("read or write sub task failed");
+                    debug!("Read or write sub task failed");
                 }
                 Err(err) => {
-                    panic!("read or write sub task failed {:?}", err);
+                    debug!("Read or write sub task failed {:?}", err);
                 }
             }
         })
