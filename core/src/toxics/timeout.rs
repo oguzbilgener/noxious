@@ -2,7 +2,7 @@ use bytes::Bytes;
 use futures::StreamExt;
 use futures::{Sink, Stream};
 use std::io;
-use std::time::Duration;
+use tokio::time::Duration;
 use tokio::time::sleep;
 use tokio::{io::AsyncWriteExt, pin};
 

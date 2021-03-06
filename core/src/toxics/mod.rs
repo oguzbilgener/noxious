@@ -4,6 +4,8 @@ mod limit_data;
 mod noop;
 mod slicer;
 mod slow_close;
+#[cfg(test)]
+mod test_utils;
 mod timeout;
 
 pub(crate) use bandwidth::*;

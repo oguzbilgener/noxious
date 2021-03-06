@@ -4,9 +4,9 @@ use futures::{SinkExt, StreamExt};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::convert::TryInto;
 use std::io;
-use std::time::Duration;
 use tokio::pin;
 use tokio::time::sleep;
+use tokio::time::Duration;
 
 /// Run the slicer toxic
 pub async fn run_slicer(
@@ -119,5 +119,27 @@ impl Iterator for SliceIter {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::toxics::test_utils::*;
+
+    #[tokio::test]
+    async fn passthrough_once() {
+        passthrough_test(
+            |stream, sink| async move { run_slicer(stream, sink, 50, 0, 0, None).await },
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn random_seed_passthrough_once() {
+        passthrough_test(|stream, sink| async move {
+            run_slicer(stream, sink, 50, 0, 0, Some(42)).await
+        })
+        .await;
     }
 }

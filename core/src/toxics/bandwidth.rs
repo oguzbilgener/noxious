@@ -4,9 +4,9 @@ use futures::{Sink, Stream};
 use futures::{SinkExt, StreamExt};
 use std::convert::TryInto;
 use std::io;
-use std::time::Duration;
 use tokio::pin;
 use tokio::time::sleep;
+use tokio::time::Duration;
 
 const INTERVAL: u64 = 100;
 const UNIT: usize = 100;

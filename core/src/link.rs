@@ -17,6 +17,7 @@ use std::{io, sync::Arc};
 use tokio::pin;
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
 use tokio::task::JoinHandle;
+use tracing::debug;
 
 #[derive(Debug)]
 pub(crate) struct Link {
@@ -161,8 +162,8 @@ impl Link {
                 _ = stop.recv() => None,
             };
             if let Some(res) = maybe_res {
-                if let Err(_err) = res {
-                    // TODO: log this error from the toxic
+                if let Err(err) = res {
+                    debug!("Got error from toxic runner {:?}", err);
                 }
             }
         });
