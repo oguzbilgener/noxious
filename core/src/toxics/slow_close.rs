@@ -43,7 +43,7 @@ pub(crate) async fn run_slow_close(
 mod tests {
     use super::*;
     use crate::toxics::test_utils::*;
-    use tokio_test::{assert_ok, assert_err};
+    use tokio_test::assert_ok;
 
     #[tokio::test]
     async fn passthrough_once() {
@@ -53,19 +53,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn drop_out_channel_first_with_latency() {
+    async fn drop_out_channel_first_0_delay() {
         let (stop, stopper) = Stop::new();
 
         let (in_stream, mut in_sink) = create_stream_sink();
-        let (out_stream, out_sink) = create_stream_sink();
+        let (mut out_stream, out_sink) = create_stream_sink();
         let data = gen_random_bytes(32);
+        let expected = Some(data.clone());
         let handle =
             tokio::spawn(async move { run_slow_close(in_stream, out_sink, stop, 0).await });
 
         assert_ok!(in_sink.send(data).await);
-        stopper.stop();
+        assert_eq!(expected, out_stream.next().await);
         drop(out_stream);
-        assert_err!(handle.await.unwrap());
+        stopper.stop();
+        assert_ok!(handle.await.unwrap());
     }
-
 }

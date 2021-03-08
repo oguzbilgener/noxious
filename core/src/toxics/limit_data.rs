@@ -100,7 +100,7 @@ mod tests {
         limit: u64,
         to_send: u64,
         prev_state: Option<Arc<AsyncMutex<ToxicState>>>,
-        expect_output: bool
+        expect_output: bool,
     ) {
         let (in_stream, mut in_sink) = create_stream_sink();
         let (mut out_stream, out_sink) = create_stream_sink();
@@ -113,20 +113,18 @@ mod tests {
         expected.truncate(limit as usize);
 
         assert_ok!(in_sink.send(data).await);
-        drop(in_sink);
+        if to_send == 0 || limit == 0 {
+            assert_eq!(None, out_stream.next().await);
+        } else if expect_output {
+            let output = out_stream.next().await.unwrap();
+            assert_eq!(expected, output);
+        }
+
         if to_send < limit {
             stopper.stop();
         }
         let res = handle.await.unwrap();
         assert_ok!(res);
-        if to_send == 0 || limit == 0 {
-            assert_eq!(None, out_stream.next().await);
-            return;
-        }
-        if expect_output {
-            let output = out_stream.next().await.unwrap();
-            assert_eq!(expected, output);
-        }
     }
 
     fn make_state() -> Arc<AsyncMutex<ToxicState>> {

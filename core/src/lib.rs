@@ -28,9 +28,12 @@ mod link;
 pub mod proxy;
 /// Contains the Stop and Close signals
 pub mod signal;
+/// Contains wrappers around Tokio types to make them mockable
+pub mod socket;
 /// Contains the shared proxy and toxic state
 pub mod state;
 mod stream;
+mod tests;
 /// Contains the toxic data types
 pub mod toxic;
 mod toxics;

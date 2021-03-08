@@ -1,3 +1,4 @@
+use crate::socket::{Listener, Stream};
 use crate::{
     error::NotFoundError,
     link::Link,
@@ -14,7 +15,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::{io, mem};
 use thiserror::Error;
-use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 use tracing::{debug, error, info, instrument};
 
@@ -108,11 +108,11 @@ impl Toxics {
 
 /// Initialize a proxy, bind to a TCP port but don't start accepting clients
 #[instrument(level = "debug", err)]
-pub async fn initialize_proxy(
+pub async fn initialize_proxy<Lis: Listener>(
     config: ProxyConfig,
     initial_toxics: Toxics,
-) -> io::Result<(TcpListener, SharedProxyInfo)> {
-    let listener = TcpListener::bind(&config.listen).await?;
+) -> io::Result<(Lis, SharedProxyInfo)> {
+    let listener = Lis::bind(&config.listen).await?;
 
     info!(name = ?config.name, proxy = ?config.listen, upstream = ?config.upstream, "Initialized proxy");
 
@@ -128,8 +128,8 @@ pub async fn initialize_proxy(
 
 /// Run the initialized proxy, accept clients, establish links
 #[instrument(level = "debug", skip(listener, receiver, stop, closer))]
-pub async fn run_proxy(
-    listener: TcpListener,
+pub async fn run_proxy<Lis: Listener>(
+    listener: Lis,
     proxy_info: SharedProxyInfo,
     receiver: RequestReceiver<ToxicEvent, ToxicEventResult>,
     mut stop: Stop,
@@ -147,7 +147,9 @@ pub async fn run_proxy(
 
     while !stop.stop_received() {
         let maybe_connection = tokio::select! {
-            res = listener.accept() => Ok::<Option<(TcpStream, SocketAddr)>, io::Error>(Some(res?)),
+            res = listener.accept() => {
+                Ok::<Option<(Lis::S, SocketAddr)>, io::Error>(Some(res?))
+            },
             _ = stop.recv() => {
                 Ok(None)
             },
@@ -155,7 +157,7 @@ pub async fn run_proxy(
 
         if let Some((client_stream, addr)) = maybe_connection {
             debug!(proxy = ?&config, addr = ?&addr, "Accepted client {}", addr);
-            let upstream = match TcpStream::connect(&config.upstream).await {
+            let upstream = match Lis::S::connect(&config.upstream).await {
                 Ok(upstream) => upstream,
                 Err(err) => {
                     error!(err = ?err, proxy = ?&config.name, listen = ?&config.listen, "Unable to open connection to upstream");
@@ -448,5 +450,58 @@ mod serde_tests {
             "{\"name\":\"foo\",\"listen\":\"127.0.0.1:5431\",\"upstream\":\"127.0.0.1:5432\"}";
         let deserialized = from_str(&input).unwrap();
         assert_eq!(expected, deserialized);
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn validates_name() {
+        let config = ProxyConfig {
+            name: "".to_owned(),
+            listen: "".to_owned(),
+            upstream: "".to_owned(),
+            enabled: true,
+            rand_seed: None,
+        };
+        assert_eq!(config.validate(), Err(ProxyValidateError::MissingName))
+    }
+
+    #[test]
+    fn validates_listen() {
+        let config = ProxyConfig {
+            name: "name".to_owned(),
+            listen: "".to_owned(),
+            upstream: "bogus_addr".to_owned(),
+            enabled: true,
+            rand_seed: None,
+        };
+        assert_eq!(config.validate(), Err(ProxyValidateError::MissingListen))
+    }
+
+    #[test]
+    fn validates_upstream() {
+        let config = ProxyConfig {
+            name: "name".to_owned(),
+            listen: "bogus_addr".to_owned(),
+            upstream: "".to_owned(),
+            enabled: true,
+            rand_seed: None,
+        };
+        assert_eq!(config.validate(), Err(ProxyValidateError::MissingUpstream))
+    }
+
+    #[test]
+    fn allows_invalid_addresses() {
+        let config = ProxyConfig {
+            name: "name".to_owned(),
+            listen: "bogus_addr".to_owned(),
+            upstream: "bogus_upstream".to_owned(),
+            enabled: true,
+            rand_seed: None,
+        };
+        assert_eq!(config.validate(), Ok(()))
     }
 }
