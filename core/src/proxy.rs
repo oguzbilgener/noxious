@@ -1,4 +1,4 @@
-use crate::socket::{Listener, Stream};
+use crate::socket::{SocketListener, SocketStream};
 use crate::{
     error::NotFoundError,
     link::Link,
@@ -108,7 +108,7 @@ impl Toxics {
 
 /// Initialize a proxy, bind to a TCP port but don't start accepting clients
 #[instrument(level = "debug", err)]
-pub async fn initialize_proxy<Lis: Listener>(
+pub async fn initialize_proxy<Lis: SocketListener>(
     config: ProxyConfig,
     initial_toxics: Toxics,
 ) -> io::Result<(Lis, SharedProxyInfo)> {
@@ -128,8 +128,8 @@ pub async fn initialize_proxy<Lis: Listener>(
 
 /// Run the initialized proxy, accept clients, establish links
 #[instrument(level = "debug", skip(listener, receiver, stop, closer))]
-pub async fn run_proxy<Lis: Listener>(
-    listener: Lis,
+pub async fn run_proxy<Listener: SocketListener>(
+    listener: Listener,
     proxy_info: SharedProxyInfo,
     receiver: RequestReceiver<ToxicEvent, ToxicEventResult>,
     mut stop: Stop,
@@ -148,7 +148,7 @@ pub async fn run_proxy<Lis: Listener>(
     while !stop.stop_received() {
         let maybe_connection = tokio::select! {
             res = listener.accept() => {
-                Ok::<Option<(Lis::S, SocketAddr)>, io::Error>(Some(res?))
+                Ok::<Option<(Listener::Stream, SocketAddr)>, io::Error>(Some(res?))
             },
             _ = stop.recv() => {
                 Ok(None)
@@ -157,7 +157,7 @@ pub async fn run_proxy<Lis: Listener>(
 
         if let Some((client_stream, addr)) = maybe_connection {
             debug!(proxy = ?&config, addr = ?&addr, "Accepted client {}", addr);
-            let upstream = match Lis::S::connect(&config.upstream).await {
+            let upstream = match Listener::Stream::connect(&config.upstream).await {
                 Ok(upstream) => upstream,
                 Err(err) => {
                     error!(err = ?err, proxy = ?&config.name, listen = ?&config.listen, "Unable to open connection to upstream");

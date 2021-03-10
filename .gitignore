@@ -12,6 +12,7 @@ Cargo.lock
 .DS_Store
 
 *.code-workspace
+.vscode/
 
 toxiproxy.json
 

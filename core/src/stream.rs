@@ -1,14 +1,14 @@
 use crate::signal::Stop;
+use crate::socket::{ReadStream, WriteStream};
 use bytes::{Bytes, BytesMut};
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use std::io;
 use std::pin::Pin;
-use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 
-pub(crate) type Read = FramedRead<OwnedReadHalf, BytesCodec>;
-pub(crate) type Write = FramedWrite<OwnedWriteHalf, BytesCodec>;
+pub(crate) type Read = FramedRead<ReadStream, BytesCodec>;
+pub(crate) type Write = FramedWrite<WriteStream, BytesCodec>;
 
 pub(crate) async fn forward(
     reader: &mut Read,

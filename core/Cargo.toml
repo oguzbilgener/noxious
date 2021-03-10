@@ -36,6 +36,8 @@ futures = { version = "0.3.12" }
 bmrng = "0.4.0"
 tracing = { version = "0.1.25", features = ["log"] }
 async-trait = "0.1.47"
+mockall_double = "0.2.0"
+pin-project-lite = "0.2.6"
 
 [dev-dependencies]
 tokio = { version = "1", features = [
@@ -49,7 +51,7 @@ tokio = { version = "1", features = [
     "test-util",
 ] }
 mockall = "0.9.1"
-mock-io = { version = "0.3", features = ["async-tokio"] }
+# mock-io = { version = "0.3", features = ["async-tokio"] }
 lazy_static = "1.4.0"
 serde_json = "^1.0.62"
 tokio-test = "0.4.0"

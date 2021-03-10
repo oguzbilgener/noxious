@@ -4,7 +4,7 @@ use futures::{stream, StreamExt};
 use noxious::{
     proxy::{initialize_proxy, run_proxy, ProxyConfig, Toxics},
     signal::{Close, Stop, Stopper},
-    socket::SocketListener,
+    socket::TcpListener,
     state::SharedProxyInfo,
     toxic::{Toxic, ToxicEvent, ToxicEventKind, ToxicEventResult},
 };
@@ -295,7 +295,7 @@ impl Shared {
         }
         let proxy_name = config.name.clone();
         let (listener, proxy_info) =
-            initialize_proxy::<SocketListener>(config, Toxics::noop()).await?;
+            initialize_proxy::<TcpListener>(config, Toxics::noop()).await?;
         let info = proxy_info.clone();
         let shared = self.clone();
         let (stop, proxy_stopper) = self.stop.fork();
