@@ -1,6 +1,8 @@
 # noxious
 
 [![Crates.io](https://img.shields.io/crates/v/noxious)](https://crates.io/crates/noxious)
+[![Unit Tests](https://github.com/oguzbilgener/noxious/actions/workflows/unit_tests.yml/badge.svg)](https://github.com/oguzbilgener/noxious/actions/workflows/unit_tests.yml)
+![Codecov](https://img.shields.io/codecov/c/gh/oguzbilgener/noxious)
 
 A Rust port of [Toxiproxy][toxiproxy] server, which is a TCP proxy to simulate network and system conditions for chaos and resiliency testing.
 
