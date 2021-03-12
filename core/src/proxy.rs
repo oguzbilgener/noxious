@@ -10,6 +10,8 @@ use crate::{
 use async_trait::async_trait;
 use bmrng::{Payload, RequestReceiver};
 use futures::{stream, StreamExt};
+#[cfg(test)]
+use mockall::automock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -108,6 +110,7 @@ impl Toxics {
 }
 
 /// The proxy runner interface (defined for mocking, mainly)
+#[cfg_attr(test, automock)]
 #[async_trait]
 pub trait Runner {
     /// Initialize a proxy, bind to a TCP port but don't start accepting clients

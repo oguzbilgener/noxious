@@ -1,6 +1,6 @@
-use crate::socket::{SocketListener, SocketStream, ReadStream, WriteStream};
+use crate::socket::{ReadStream, SocketListener, SocketStream, WriteStream};
 use async_trait::async_trait;
-use mockall::{mock, predicate::*};
+use mockall::mock;
 use std::{io, net::SocketAddr};
 
 mock! {

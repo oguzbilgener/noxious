@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 #[cfg(test)]
-use mockall::{automock, predicate::*};
+use mockall::automock;
 use pin_project_lite::pin_project;
 use std::{io, net::SocketAddr};
 use tokio::{

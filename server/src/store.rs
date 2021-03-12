@@ -422,4 +422,176 @@ impl ProxyWithToxics {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use async_trait::async_trait;
+    use bmrng::RequestReceiver;
+    use lazy_static::lazy_static;
+    use mockall::{mock, predicate::*};
+    use noxious::socket::{ReadStream, SocketListener, SocketStream, WriteStream};
+    use noxious::{signal::Closer, state::ProxyState};
+    use std::{io, net::SocketAddr};
+    use tokio::sync::Mutex as AsyncMutex;
+    use tokio_test::assert_ok;
+
+    mock! {
+        pub NoopListener {}
+
+        #[async_trait]
+        impl SocketListener for NoopListener {
+            type Stream = MockNoopStream;
+
+            async fn bind(addr: &str) -> io::Result<Self>
+            where
+                Self: Sized;
+
+            async fn accept(&self) -> io::Result<(MockNoopStream, SocketAddr)>;
+        }
+    }
+
+    mock! {
+        pub NoopStream {}
+
+        #[async_trait]
+        impl SocketStream for NoopStream {
+            async fn connect(addr: &str) -> io::Result<Self>
+            where
+                Self: Sized + 'static;
+
+            fn into_split(self) -> (ReadStream, WriteStream);
+        }
+    }
+
+    mock! {
+        pub NoopRunner {}
+
+        #[async_trait]
+        impl Runner for NoopRunner {
+
+            async fn initialize_proxy<Listener>(
+                config: ProxyConfig,
+                initial_toxics: Toxics,
+            ) -> io::Result<(Listener, SharedProxyInfo)>
+            where
+                Listener: SocketListener + 'static,
+            {
+            }
+            async fn run_proxy<Listener>(
+                listener: Listener,
+                proxy_info: SharedProxyInfo,
+                receiver: RequestReceiver<ToxicEvent, ToxicEventResult>,
+                mut stop: Stop,
+                closer: Closer,
+            ) -> io::Result<()>
+            where
+                Listener: SocketListener + 'static,
+            {
+            }
+        }
+    }
+
+    lazy_static! {
+        static ref MOCK_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+    }
+    use super::*;
+    #[tokio::test]
+    async fn populate_proxies() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let config1 = ProxyConfig {
+            name: "foo".to_owned(),
+            listen: "127.0.0.1:5431".to_owned(),
+            upstream: "127.0.0.1:5432".to_owned(),
+            enabled: true,
+            rand_seed: Some(3),
+        };
+        let config2 = ProxyConfig {
+            name: "bar".to_owned(),
+            listen: "127.0.0.1:27018".to_owned(),
+            upstream: "127.0.0.1:27017".to_owned(),
+            enabled: true,
+            rand_seed: Some(3),
+        };
+        let config3 = ProxyConfig {
+            name: "baz".to_owned(),
+            listen: "127.0.0.1:8081".to_owned(),
+            upstream: "127.0.0.1:8080".to_owned(),
+            enabled: false,
+            rand_seed: None,
+        };
+        let init_ctx = MockNoopRunner::initialize_proxy_context();
+        let run_ctx = MockNoopRunner::run_proxy_context();
+        init_ctx.expect().returning(|config, initial_toxics| {
+            let listener = MockNoopListener::default();
+            let proxy_info = SharedProxyInfo {
+                state: Arc::new(ProxyState::new(initial_toxics)),
+                config: Arc::new(config),
+            };
+            Ok((listener, proxy_info))
+        });
+
+        run_ctx.expect().returning(
+            |_listener: MockNoopListener, _info, _event_receiver, _stop, closer| {
+                let _ = closer.close();
+                Ok(())
+            },
+        );
+
+        let configs = vec![config1, config2, config3];
+        let result = store
+            .populate::<MockNoopListener, MockNoopRunner>(configs)
+            .await;
+        assert_ok!(&result);
+        let result = result.unwrap();
+        assert_eq!(3, result.len());
+        assert_eq!("foo", result[0].proxy.name);
+        assert_eq!("bar", result[1].proxy.name);
+        assert_eq!("baz", result[2].proxy.name);
+        assert_eq!(false, result[2].proxy.enabled);
+    }
+
+    #[tokio::test]
+    async fn populate_succeeds_even_if_run_proxy_fails() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let config1 = ProxyConfig {
+            name: "foo".to_owned(),
+            listen: "127.0.0.1:5431".to_owned(),
+            upstream: "127.0.0.1:5432".to_owned(),
+            enabled: true,
+            rand_seed: Some(3),
+        };
+        let init_ctx = MockNoopRunner::initialize_proxy_context();
+        let run_ctx = MockNoopRunner::run_proxy_context();
+        init_ctx.expect().returning(|config, initial_toxics| {
+            let listener = MockNoopListener::default();
+            let proxy_info = SharedProxyInfo {
+                state: Arc::new(ProxyState::new(initial_toxics)),
+                config: Arc::new(config),
+            };
+            Ok((listener, proxy_info))
+        });
+
+        run_ctx.expect().returning(
+            |_listener: MockNoopListener, _info, _event_receiver, _stop, closer| {
+                let _ = closer.close();
+                Err(io::Error::new(io::ErrorKind::ConnectionRefused, "oops"))
+            },
+        );
+
+        let configs = vec![config1];
+        let result = store
+            .populate::<MockNoopListener, MockNoopRunner>(configs)
+            .await;
+        assert_ok!(&result);
+        let result = result.unwrap();
+        assert_eq!(1, result.len());
+        assert_eq!("foo", result[0].proxy.name);
+    }
+
+    #[tokio::test]
+    async fn create_proxy_port_in_use() {
+        // TODO
+    }
+}

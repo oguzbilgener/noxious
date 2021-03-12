@@ -37,7 +37,8 @@ pub struct SharedProxyInfo {
 }
 
 impl ProxyState {
-    pub(crate) fn new(toxics: Toxics) -> Self {
+    /// Initialize an empty proxy state
+    pub fn new(toxics: Toxics) -> Self {
         ProxyState {
             inner: Mutex::new(ProxyStateInner {
                 clients: HashMap::new(),
