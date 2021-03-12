@@ -7,6 +7,7 @@ use crate::{
     stream::{Read, Write},
     toxic::{update_toxic_list_in_place, StreamDirection, Toxic, ToxicEvent, ToxicEventResult},
 };
+use async_trait::async_trait;
 use bmrng::{Payload, RequestReceiver};
 use futures::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -106,105 +107,141 @@ impl Toxics {
     }
 }
 
-/// Initialize a proxy, bind to a TCP port but don't start accepting clients
-#[instrument(level = "debug", err)]
-pub async fn initialize_proxy<Lis: SocketListener>(
-    config: ProxyConfig,
-    initial_toxics: Toxics,
-) -> io::Result<(Lis, SharedProxyInfo)> {
-    let listener = Lis::bind(&config.listen).await?;
+/// The proxy runner interface (defined for mocking, mainly)
+#[async_trait]
+pub trait Runner {
+    /// Initialize a proxy, bind to a TCP port but don't start accepting clients
+    async fn initialize_proxy<Listener>(
+        config: ProxyConfig,
+        initial_toxics: Toxics,
+    ) -> io::Result<(Listener, SharedProxyInfo)>
+    where
+        Listener: SocketListener + 'static;
 
-    info!(name = ?config.name, proxy = ?config.listen, upstream = ?config.upstream, "Initialized proxy");
-
-    let state = Arc::new(ProxyState::new(initial_toxics));
-
-    let proxy_info = SharedProxyInfo {
-        state,
-        config: Arc::new(config),
-    };
-
-    Ok((listener, proxy_info))
+    /// Run the initialized proxy, accept clients, establish links
+    async fn run_proxy<Listener>(
+        listener: Listener,
+        proxy_info: SharedProxyInfo,
+        receiver: RequestReceiver<ToxicEvent, ToxicEventResult>,
+        mut stop: Stop,
+        closer: Closer,
+    ) -> io::Result<()>
+    where
+        Listener: SocketListener + 'static;
 }
 
-/// Run the initialized proxy, accept clients, establish links
-#[instrument(level = "debug", skip(listener, receiver, stop, closer))]
-pub async fn run_proxy<Listener: SocketListener>(
-    listener: Listener,
-    proxy_info: SharedProxyInfo,
-    receiver: RequestReceiver<ToxicEvent, ToxicEventResult>,
-    mut stop: Stop,
-    closer: Closer,
-) -> io::Result<()> {
-    let state = proxy_info.state;
-    let config = proxy_info.config;
+/// The proxy runner
+#[derive(Debug, Copy, Clone)]
+pub struct ProxyRunner;
 
-    tokio::spawn(listen_toxic_events(
-        state.clone(),
-        receiver,
-        stop.clone(),
-        config.clone(),
-    ));
+#[async_trait]
+impl Runner for ProxyRunner {
+    /// Initialize a proxy, bind to a TCP port but don't start accepting clients
+    #[instrument(level = "debug")]
+    async fn initialize_proxy<Listener>(
+        config: ProxyConfig,
+        initial_toxics: Toxics,
+    ) -> io::Result<(Listener, SharedProxyInfo)>
+    where
+        Listener: SocketListener + 'static,
+    {
+        let listener = Listener::bind(&config.listen).await?;
 
-    while !stop.stop_received() {
-        let maybe_connection = tokio::select! {
-            res = listener.accept() => {
-                Ok::<Option<(Listener::Stream, SocketAddr)>, io::Error>(Some(res?))
-            },
-            _ = stop.recv() => {
-                Ok(None)
-            },
-        }?;
+        info!(name = ?config.name, proxy = ?config.listen, upstream = ?config.upstream, "Initialized proxy");
 
-        if let Some((client_stream, addr)) = maybe_connection {
-            debug!(proxy = ?&config, addr = ?&addr, "Accepted client {}", addr);
-            let upstream = match Listener::Stream::connect(&config.upstream).await {
-                Ok(upstream) => upstream,
-                Err(err) => {
-                    error!(err = ?err, proxy = ?&config.name, listen = ?&config.listen, "Unable to open connection to upstream");
-                    // This is not a fatal error, can retry next time another client connects
-                    continue;
-                }
-            };
+        let state = Arc::new(ProxyState::new(initial_toxics));
 
-            let (client_read, client_write) = client_stream.into_split();
-            let (upstream_read, upstream_write) = upstream.into_split();
+        let proxy_info = SharedProxyInfo {
+            state,
+            config: Arc::new(config),
+        };
 
-            let client_read =
-                FramedRead::with_capacity(client_read, BytesCodec::new(), READ_BUFFER_SIZE);
-            let client_write = FramedWrite::new(client_write, BytesCodec::new());
-            let upstream_read =
-                FramedRead::with_capacity(upstream_read, BytesCodec::new(), READ_BUFFER_SIZE);
-            let upstream_write = FramedWrite::new(upstream_write, BytesCodec::new());
-
-            let toxics = state.lock().toxics.clone();
-
-            let res = create_links(
-                state.clone(),
-                addr,
-                &config,
-                &mut stop,
-                toxics,
-                client_read,
-                client_write,
-                upstream_read,
-                upstream_write,
-                None,
-            );
-            match res {
-                Err(err) => {
-                    error!(err = ?err, proxy = ?&config.name, listen = ?&config.listen, "Unable to establish link for proxy");
-                    continue;
-                }
-                _ => {}
-            }
-        } else {
-            break;
-        }
+        Ok((listener, proxy_info))
     }
-    drop(listener);
-    let _ = closer.close();
-    debug!(proxy = ?&config.name, listen = ?&config.listen, "Shutting down proxy");
-    Ok(())
+
+    /// Run the initialized proxy, accept clients, establish links
+    #[instrument(level = "debug", skip(listener, receiver, stop, closer))]
+    async fn run_proxy<Listener>(
+        listener: Listener,
+        proxy_info: SharedProxyInfo,
+        receiver: RequestReceiver<ToxicEvent, ToxicEventResult>,
+        mut stop: Stop,
+        closer: Closer,
+    ) -> io::Result<()>
+    where
+        Listener: SocketListener + 'static,
+    {
+        let state = proxy_info.state;
+        let config = proxy_info.config;
+
+        tokio::spawn(listen_toxic_events(
+            state.clone(),
+            receiver,
+            stop.clone(),
+            config.clone(),
+        ));
+
+        while !stop.stop_received() {
+            let maybe_connection = tokio::select! {
+                res = listener.accept() => {
+                    Ok::<Option<(Listener::Stream, SocketAddr)>, io::Error>(Some(res?))
+                },
+                _ = stop.recv() => {
+                    Ok(None)
+                },
+            }?;
+
+            if let Some((client_stream, addr)) = maybe_connection {
+                debug!(proxy = ?&config, addr = ?&addr, "Accepted client {}", addr);
+                let upstream = match Listener::Stream::connect(&config.upstream).await {
+                    Ok(upstream) => upstream,
+                    Err(err) => {
+                        error!(err = ?err, proxy = ?&config.name, listen = ?&config.listen, "Unable to open connection to upstream");
+                        // This is not a fatal error, can retry next time another client connects
+                        continue;
+                    }
+                };
+
+                let (client_read, client_write) = client_stream.into_split();
+                let (upstream_read, upstream_write) = upstream.into_split();
+
+                let client_read =
+                    FramedRead::with_capacity(client_read, BytesCodec::new(), READ_BUFFER_SIZE);
+                let client_write = FramedWrite::new(client_write, BytesCodec::new());
+                let upstream_read =
+                    FramedRead::with_capacity(upstream_read, BytesCodec::new(), READ_BUFFER_SIZE);
+                let upstream_write = FramedWrite::new(upstream_write, BytesCodec::new());
+
+                let toxics = state.lock().toxics.clone();
+
+                let res = create_links(
+                    state.clone(),
+                    addr,
+                    &config,
+                    &mut stop,
+                    toxics,
+                    client_read,
+                    client_write,
+                    upstream_read,
+                    upstream_write,
+                    None,
+                );
+                match res {
+                    Err(err) => {
+                        error!(err = ?err, proxy = ?&config.name, listen = ?&config.listen, "Unable to establish link for proxy");
+                        continue;
+                    }
+                    _ => {}
+                }
+            } else {
+                break;
+            }
+        }
+        drop(listener);
+        let _ = closer.close();
+        debug!(proxy = ?&config.name, listen = ?&config.listen, "Shutting down proxy");
+        Ok(())
+    }
 }
 
 #[instrument(

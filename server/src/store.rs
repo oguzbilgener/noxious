@@ -2,9 +2,9 @@ use crate::error::{ResourceKind, StoreError};
 use bmrng::RequestSender;
 use futures::{stream, StreamExt};
 use noxious::{
-    proxy::{initialize_proxy, run_proxy, ProxyConfig, Toxics},
+    proxy::{ProxyConfig, Runner, Toxics},
     signal::{Close, Stop, Stopper},
-    socket::TcpListener,
+    socket::SocketListener,
     state::SharedProxyInfo,
     toxic::{Toxic, ToxicEvent, ToxicEventKind, ToxicEventResult},
 };
@@ -62,7 +62,7 @@ impl Store {
     }
 
     /// Remove all toxics from all proxies
-    #[instrument]
+    #[instrument(skip(self))]
     pub async fn reset_state(&self) -> Result<()> {
         let pairs: Vec<(String, RequestSender<ToxicEvent, ToxicEventResult>)> = self
             .shared
@@ -83,8 +83,12 @@ impl Store {
         Ok(())
     }
 
-    #[instrument(level = "trace")]
-    pub async fn populate(&self, input: Vec<ProxyConfig>) -> Result<Vec<ProxyWithToxics>> {
+    #[instrument(level = "trace", skip(self))]
+    pub async fn populate<L, R>(&self, input: Vec<ProxyConfig>) -> Result<Vec<ProxyWithToxics>>
+    where
+        L: SocketListener + 'static,
+        R: Runner + 'static,
+    {
         for config in &input {
             if let Err(err) = config.validate() {
                 return Err(err.into());
@@ -112,7 +116,7 @@ impl Store {
         let mut created_proxies = Vec::with_capacity(input.len());
 
         for config in input {
-            match self.shared.create_proxy(config).await {
+            match self.shared.create_proxy::<L, R>(config).await {
                 Ok(shared_proxy_info) => {
                     created_proxies.push(shared_proxy_info);
                 }
@@ -133,7 +137,7 @@ impl Store {
         Ok(proxies_with_toxics)
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     pub async fn get_proxies(&self) -> Result<Vec<ProxyWithToxics>> {
         let state = self.shared.get_state();
         Ok(state
@@ -143,13 +147,17 @@ impl Store {
             .collect())
     }
 
-    #[instrument(level = "trace")]
-    pub async fn create_proxy(&self, config: ProxyConfig) -> Result<ProxyWithToxics> {
-        let shared_proxy_info = self.shared.create_proxy(config).await?;
+    #[instrument(level = "trace", skip(self))]
+    pub async fn create_proxy<L, R>(&self, config: ProxyConfig) -> Result<ProxyWithToxics>
+    where
+        L: SocketListener + 'static,
+        R: Runner + 'static,
+    {
+        let shared_proxy_info = self.shared.create_proxy::<L, R>(config).await?;
         Ok(ProxyWithToxics::from_shared_proxy_info(shared_proxy_info))
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     pub async fn get_proxy(&self, proxy_name: &str) -> Result<ProxyWithToxics> {
         let state = self.shared.get_state();
         let proxy = state
@@ -159,24 +167,28 @@ impl Store {
         Ok(ProxyWithToxics::from_shared_proxy_info(proxy.info.clone()))
     }
 
-    #[instrument(level = "trace")]
-    pub async fn update_proxy(
+    #[instrument(level = "trace", skip(self))]
+    pub async fn update_proxy<L, R>(
         &self,
         proxy_name: String,
         new_config: ProxyConfig,
-    ) -> Result<ProxyWithToxics> {
+    ) -> Result<ProxyWithToxics>
+    where
+        L: SocketListener + 'static,
+        R: Runner + 'static,
+    {
         self.shared.remove_proxy(&proxy_name).await?;
-        let shared_proxy_info = self.shared.create_proxy(new_config).await?;
+        let shared_proxy_info = self.shared.create_proxy::<L, R>(new_config).await?;
         Ok(ProxyWithToxics::from_shared_proxy_info(shared_proxy_info))
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     pub async fn remove_proxy(&self, proxy_name: &str) -> Result<()> {
         self.shared.remove_proxy(proxy_name).await?;
         Ok(())
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     pub async fn create_toxic(&self, proxy_name: String, toxic: Toxic) -> Result<Toxic> {
         let sender = self.shared.get_event_sender_for_proxy(&proxy_name)?;
 
@@ -194,7 +206,7 @@ impl Store {
         }
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     pub async fn get_toxics(&self, proxy_name: &str) -> Result<Vec<Toxic>> {
         Ok(self
             .shared
@@ -210,7 +222,7 @@ impl Store {
             .into_vec())
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     pub async fn get_toxic(&self, proxy_name: &str, toxic_name: &str) -> Result<Toxic> {
         self.shared
             .get_state()
@@ -225,7 +237,7 @@ impl Store {
             .ok_or(StoreError::NotFound(ResourceKind::Toxic))
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     pub async fn update_toxic(
         &self,
         proxy_name: String,
@@ -248,7 +260,7 @@ impl Store {
         }
     }
 
-    #[instrument(level = "trace")]
+    #[instrument(level = "trace", skip(self))]
     pub async fn remove_toxic(&self, proxy_name: String, toxic_name: String) -> Result<()> {
         let sender = self.shared.get_event_sender_for_proxy(&proxy_name)?;
 
@@ -285,7 +297,14 @@ impl Shared {
     }
 
     #[instrument(level = "debug", skip(self))]
-    async fn create_proxy(self: &Arc<Self>, mut config: ProxyConfig) -> Result<SharedProxyInfo> {
+    async fn create_proxy<L, R>(
+        self: &Arc<Self>,
+        mut config: ProxyConfig,
+    ) -> Result<SharedProxyInfo>
+    where
+        L: SocketListener + 'static,
+        R: Runner + 'static,
+    {
         if self.get_state().proxy_exists(&config.name) {
             return Err(StoreError::AlreadyExists);
         }
@@ -294,8 +313,7 @@ impl Shared {
             config.rand_seed = Some(rand_seed);
         }
         let proxy_name = config.name.clone();
-        let (listener, proxy_info) =
-            initialize_proxy::<TcpListener>(config, Toxics::noop()).await?;
+        let (listener, proxy_info) = R::initialize_proxy::<L>(config, Toxics::noop()).await?;
         let info = proxy_info.clone();
         let shared = self.clone();
         let (stop, proxy_stopper) = self.stop.fork();
@@ -317,7 +335,7 @@ impl Shared {
         if info.config.enabled {
             tokio::spawn(async move {
                 debug!(proxy = ?&info.config, "Starting proxy");
-                let _ = run_proxy(listener, info, event_receiver, stop, closer).await;
+                let _ = R::run_proxy(listener, info, event_receiver, stop, closer).await;
                 // Proxy task ended because of the stop signal, or an I/O error on accept.
                 // So we should self-clean by removing the proxy from the state, if
                 // the proxy in the state with the same name also has the same launch ID.
@@ -402,3 +420,6 @@ impl ProxyWithToxics {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {}

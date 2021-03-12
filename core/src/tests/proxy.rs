@@ -1,4 +1,4 @@
-use crate::proxy::{self, ProxyConfig, Toxics};
+use crate::proxy::{ProxyConfig, ProxyRunner, Runner, Toxics};
 use crate::signal::{Close, Stop};
 use crate::socket::{ReadStream, WriteStream};
 use crate::tests::socket_mocks::*;
@@ -38,7 +38,7 @@ async fn initialize_proxy_no_toxics_accept_fails() {
     });
 
     let toxics = Toxics::noop();
-    let proxy = proxy::initialize_proxy::<MockMemoryListener>(config, toxics).await;
+    let proxy = ProxyRunner::initialize_proxy::<MockMemoryListener>(config, toxics).await;
     assert_ok!(&proxy);
     let (listener, info) = proxy.unwrap();
     assert_eq!(expected_config, *info.config);
@@ -48,7 +48,9 @@ async fn initialize_proxy_no_toxics_accept_fails() {
     let (stop, _stopper) = Stop::new();
     let (_close, closer) = Close::new();
 
-    let result = proxy::run_proxy(listener, info, event_receiver, stop, closer).await;
+    let result =
+        ProxyRunner::run_proxy::<MockMemoryListener>(listener, info, event_receiver, stop, closer)
+            .await;
     assert_err!(&result);
     assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Other,);
 }
@@ -126,7 +128,7 @@ async fn run_proxy_no_toxics_forward() {
         });
 
     let toxics = Toxics::noop();
-    let proxy = proxy::initialize_proxy::<MockMemoryListener>(config, toxics).await;
+    let proxy = ProxyRunner::initialize_proxy::<MockMemoryListener>(config, toxics).await;
     assert_ok!(&proxy);
     let (listener, info) = proxy.unwrap();
     assert_eq!(expected_config, *info.config);
@@ -137,7 +139,7 @@ async fn run_proxy_no_toxics_forward() {
     let (close, closer) = Close::new();
 
     let handle = tokio::spawn(async move {
-        let result = proxy::run_proxy(listener, info, event_receiver, stop, closer).await;
+        let result = ProxyRunner::run_proxy(listener, info, event_receiver, stop, closer).await;
         assert_err!(result);
     });
     assert_ok!(handle.await);
@@ -230,7 +232,7 @@ async fn run_proxy_with_slicer() {
         }],
         downstream: Vec::new(),
     };
-    let proxy = proxy::initialize_proxy::<MockMemoryListener>(config, toxics).await;
+    let proxy = ProxyRunner::initialize_proxy::<MockMemoryListener>(config, toxics).await;
     assert_ok!(&proxy);
     let (listener, info) = proxy.unwrap();
     assert_eq!(expected_config, *info.config);
@@ -241,7 +243,7 @@ async fn run_proxy_with_slicer() {
     let (close, closer) = Close::new();
 
     let handle = tokio::spawn(async move {
-        let result = proxy::run_proxy(listener, info, event_receiver, stop, closer).await;
+        let result = ProxyRunner::run_proxy(listener, info, event_receiver, stop, closer).await;
         assert_err!(result);
     });
     assert_ok!(handle.await);

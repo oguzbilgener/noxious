@@ -1,5 +1,5 @@
 use crate::{error::StoreError, store::Store, util};
-use noxious::{proxy::ProxyConfig, toxic::Toxic};
+use noxious::{proxy::{ProxyConfig, ProxyRunner}, socket::TcpListener, toxic::Toxic};
 use responses::*;
 use serde_json::Value as JsonValue;
 use std::convert::Infallible;
@@ -24,7 +24,7 @@ pub async fn reset_state(store: Store) -> Result<impl Reply, Infallible> {
 #[instrument(level = "info", skip(store))]
 pub async fn populate(configs: Vec<ProxyConfig>, store: Store) -> Result<impl Reply, Infallible> {
     wrap_store_result_with_status(
-        async move { store.populate(configs).await },
+        async move { store.populate::<TcpListener, ProxyRunner>(configs).await },
         StatusCode::CREATED,
     )
     .await
@@ -51,7 +51,7 @@ pub async fn get_proxies(store: Store) -> Result<impl Reply, Infallible> {
 #[instrument(level = "info", skip(store))]
 pub async fn create_proxy(proxy: ProxyConfig, store: Store) -> Result<impl Reply, Infallible> {
     wrap_store_result_with_status(
-        async move { store.create_proxy(proxy).await },
+        async move { store.create_proxy::<TcpListener, ProxyRunner>(proxy).await },
         StatusCode::CREATED,
     )
     .await
@@ -68,7 +68,7 @@ pub async fn update_proxy(
     new_proxy: ProxyConfig,
     store: Store,
 ) -> Result<impl Reply, Infallible> {
-    wrap_store_result(async move { store.update_proxy(name, new_proxy).await }).await
+    wrap_store_result(async move { store.update_proxy::<TcpListener, ProxyRunner>(name, new_proxy).await }).await
 }
 
 #[instrument(level = "info", skip(store))]

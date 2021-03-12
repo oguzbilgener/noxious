@@ -1,6 +1,6 @@
 use crate::args::Args;
 use clap::Clap;
-use noxious::signal::Stop;
+use noxious::{proxy::ProxyRunner, signal::Stop, socket::TcpListener};
 use std::net::SocketAddr;
 use tokio::signal;
 use tracing::{debug, info};
@@ -25,7 +25,7 @@ async fn main() {
     let store = Store::new(stop.clone(), args.seed);
 
     if let Some(config_file_path) = &args.config {
-        populate_initial_proxy_configs(config_file_path, store.clone());
+        populate_initial_proxy_configs::<TcpListener, ProxyRunner>(config_file_path, store.clone());
     } else {
         debug!("No config file path provided");
     }
