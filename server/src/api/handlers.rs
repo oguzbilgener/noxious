@@ -68,7 +68,7 @@ pub async fn update_proxy(
     new_proxy: ProxyConfig,
     store: Store,
 ) -> Result<impl Reply, Infallible> {
-    wrap_store_result(async move { store.update_proxy::<TcpListener, ProxyRunner>(name, new_proxy).await }).await
+    wrap_store_result(async move { store.update_proxy::<TcpListener, ProxyRunner>(&name, new_proxy).await }).await
 }
 
 #[instrument(level = "info", skip(store))]

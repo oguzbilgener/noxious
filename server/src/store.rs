@@ -170,14 +170,14 @@ impl Store {
     #[instrument(level = "trace", skip(self))]
     pub async fn update_proxy<L, R>(
         &self,
-        proxy_name: String,
+        proxy_name: &str,
         new_config: ProxyConfig,
     ) -> Result<ProxyWithToxics>
     where
         L: SocketListener + 'static,
         R: Runner + 'static,
     {
-        self.shared.remove_proxy(&proxy_name).await?;
+        self.shared.remove_proxy(proxy_name).await?;
         let shared_proxy_info = self.shared.create_proxy::<L, R>(new_config).await?;
         Ok(ProxyWithToxics::from_shared_proxy_info(shared_proxy_info))
     }
@@ -331,6 +331,7 @@ impl Shared {
                 event_sender,
             },
         );
+        println!("inserted");
 
         if info.config.enabled {
             tokio::spawn(async move {
@@ -423,12 +424,16 @@ impl ProxyWithToxics {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use async_trait::async_trait;
     use bmrng::RequestReceiver;
     use lazy_static::lazy_static;
     use mockall::{mock, predicate::*};
-    use noxious::socket::{ReadStream, SocketListener, SocketStream, WriteStream};
     use noxious::{signal::Closer, state::ProxyState};
+    use noxious::{
+        socket::{ReadStream, SocketListener, SocketStream, WriteStream},
+        toxic::{StreamDirection, ToxicKind},
+    };
     use std::{io, net::SocketAddr};
     use tokio::sync::Mutex as AsyncMutex;
     use tokio_test::assert_ok;
@@ -492,7 +497,105 @@ mod tests {
     lazy_static! {
         static ref MOCK_LOCK: AsyncMutex<()> = AsyncMutex::new(());
     }
-    use super::*;
+
+    async fn populate_store(store: &Store) {
+        let config1 = ProxyConfig {
+            name: "foo".to_owned(),
+            listen: "127.0.0.1:5431".to_owned(),
+            upstream: "127.0.0.1:5432".to_owned(),
+            enabled: true,
+            rand_seed: Some(3),
+        };
+        let config2 = ProxyConfig {
+            name: "bar".to_owned(),
+            listen: "127.0.0.1:27018".to_owned(),
+            upstream: "127.0.0.1:27017".to_owned(),
+            enabled: true,
+            rand_seed: Some(3),
+        };
+        let config3 = ProxyConfig {
+            name: "baz".to_owned(),
+            listen: "127.0.0.1:8081".to_owned(),
+            upstream: "127.0.0.1:8080".to_owned(),
+            enabled: false,
+            rand_seed: None,
+        };
+        let configs = vec![config1, config2, config3];
+        let _ = store
+            .populate::<MockNoopListener, MockNoopRunner>(configs)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn reset_state_sends_reset_event() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let init_ctx = MockNoopRunner::initialize_proxy_context();
+        let run_ctx = MockNoopRunner::run_proxy_context();
+        init_ctx.expect().returning(|config, initial_toxics| {
+            let listener = MockNoopListener::default();
+            let proxy_info = SharedProxyInfo {
+                state: Arc::new(ProxyState::new(initial_toxics)),
+                config: Arc::new(config),
+            };
+            Ok((listener, proxy_info))
+        });
+
+        let (done, mark_done) = Close::new();
+        let st2 = store.clone();
+        run_ctx.expect().return_once_st(
+            move |_listener: MockNoopListener, info, mut event_receiver, _stop, closer| {
+                {
+                    // Hack to prevent removing this proxy from the store state when the runner task ends
+                    // because we can't make this mocked run function async
+                    let mut state = st2.shared.get_state();
+                    let handle = state.proxies.get_mut(&info.config.name).unwrap();
+                    handle.id = 99999999;
+                }
+                tokio::spawn(async move {
+                    // skip the first event which is add toxic
+                    let (_event, mut responder) = event_receiver.recv().await.expect("closed 1");
+                    assert_ok!(responder.respond(Ok(())));
+                    let (event, _) = event_receiver.recv().await.expect("closed 2");
+                    assert_eq!(event.proxy_name, "foo");
+                    assert_eq!(event.kind, ToxicEventKind::RemoveAllToxics);
+                    assert_ok!(mark_done.close());
+                    assert_ok!(closer.close());
+                });
+                Ok(())
+            },
+        );
+
+        assert_ok!(
+            store
+                .create_proxy::<MockNoopListener, MockNoopRunner>(ProxyConfig {
+                    name: "foo".to_owned(),
+                    listen: "127.0.0.1:5431".to_owned(),
+                    upstream: "127.0.0.1:5432".to_owned(),
+                    enabled: true,
+                    rand_seed: Some(3),
+                })
+                .await
+        );
+        assert_ok!(
+            store
+                .create_toxic(
+                    "foo".into(),
+                    Toxic {
+                        kind: ToxicKind::SlowClose { delay: 1000 },
+                        name: "t1".to_owned(),
+                        toxicity: 0.5,
+                        direction: StreamDirection::Upstream,
+                    }
+                )
+                .await
+        );
+
+        assert_ok!(store.reset_state().await);
+        assert_ok!(done.recv().await);
+    }
+
     #[tokio::test]
     async fn populate_proxies() {
         let _lock = MOCK_LOCK.lock().await;
@@ -591,7 +694,196 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_proxy_port_in_use() {
-        // TODO
+    async fn get_proxies_gets_proxies_with_toxics() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let init_ctx = MockNoopRunner::initialize_proxy_context();
+        let run_ctx = MockNoopRunner::run_proxy_context();
+        init_ctx.expect().returning(|config, _initial_toxics| {
+            let listener = MockNoopListener::default();
+            let proxy_info = SharedProxyInfo {
+                state: Arc::new(ProxyState::new(Toxics {
+                    upstream: vec![Toxic {
+                        kind: ToxicKind::Latency {
+                            latency: 500,
+                            jitter: 42,
+                        },
+                        name: format!("{}tox1", config.name),
+                        toxicity: 0.67,
+                        direction: StreamDirection::Upstream,
+                    }],
+                    downstream: Vec::new(),
+                })),
+                config: Arc::new(config),
+            };
+            Ok((listener, proxy_info))
+        });
+
+        run_ctx.expect().returning(
+            move |_listener: MockNoopListener, _info, _event_receiver, _stop, _closer| Ok(()),
+        );
+
+        populate_store(&store).await;
+
+        let result = store.get_proxies().await.unwrap();
+        assert_eq!(3, result.len());
+        let foo = result.iter().find(|el| el.proxy.name == "foo").unwrap();
+        let bar = result.iter().find(|el| el.proxy.name == "bar").unwrap();
+        let baz = result.iter().find(|el| el.proxy.name == "baz").unwrap();
+        assert_eq!("footox1", foo.toxics[0].get_name());
+        assert_eq!("bartox1", bar.toxics[0].get_name());
+        assert_eq!("baztox1", baz.toxics[0].get_name());
+    }
+
+    #[tokio::test]
+    async fn get_proxy_gets_proxy_with_toxics() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let init_ctx = MockNoopRunner::initialize_proxy_context();
+        let run_ctx = MockNoopRunner::run_proxy_context();
+        init_ctx.expect().returning(|config, _initial_toxics| {
+            let listener = MockNoopListener::default();
+            let proxy_info = SharedProxyInfo {
+                state: Arc::new(ProxyState::new(Toxics {
+                    upstream: vec![Toxic {
+                        kind: ToxicKind::SlowClose { delay: 1000 },
+                        name: format!("{}tox1", config.name),
+                        toxicity: 0.5,
+                        direction: StreamDirection::Upstream,
+                    }],
+                    downstream: Vec::new(),
+                })),
+                config: Arc::new(config),
+            };
+            Ok((listener, proxy_info))
+        });
+
+        run_ctx.expect().returning(
+            move |_listener: MockNoopListener, _info, _event_receiver, _stop, _closer| Ok(()),
+        );
+
+        populate_store(&store).await;
+
+        assert_eq!(
+            StoreError::NotFound(ResourceKind::Proxy),
+            store.get_proxy("nope").await.unwrap_err()
+        );
+        let result = store.get_proxy("foo").await.unwrap();
+        assert_eq!("foo", result.proxy.name);
+        assert_eq!("footox1", result.toxics[0].get_name());
+    }
+
+    #[tokio::test]
+    async fn update_proxy_returns_not_found() {
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+
+        assert_eq!(
+            StoreError::NotFound(ResourceKind::Proxy),
+            store
+                .update_proxy::<MockNoopListener, MockNoopRunner>(
+                    "nope",
+                    ProxyConfig {
+                        name: "bar".to_owned(),
+                        listen: "127.0.0.1:27018".to_owned(),
+                        upstream: "127.0.0.1:27017".to_owned(),
+                        enabled: true,
+                        rand_seed: None,
+                    }
+                )
+                .await
+                .unwrap_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn disable_proxy_with_update() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let init_ctx = MockNoopRunner::initialize_proxy_context();
+        let run_ctx = MockNoopRunner::run_proxy_context();
+        init_ctx.expect().returning(|config, _initial_toxics| {
+            let listener = MockNoopListener::default();
+            let proxy_info = SharedProxyInfo {
+                state: Arc::new(ProxyState::new(Toxics {
+                    upstream: vec![Toxic {
+                        kind: ToxicKind::SlowClose { delay: 1000 },
+                        name: format!("{}tox!", config.name),
+                        toxicity: 0.5,
+                        direction: StreamDirection::Upstream,
+                    }],
+                    downstream: Vec::new(),
+                })),
+                config: Arc::new(config),
+            };
+            Ok((listener, proxy_info))
+        });
+
+        let (run_done, mark_run_done) = Close::new();
+        let st2 = store.clone();
+        // Only calls run_proxy once because the second time it's disabled
+        run_ctx.expect().return_once_st(
+            move |_listener: MockNoopListener, info, _event_receiver, _stop, _closer| {
+                {
+                    // Hack to prevent removing this proxy from the store state when the runner task ends
+                    // because we can't make this mocked run function async
+                    let mut state = st2.shared.get_state();
+                    let handle = state.proxies.get_mut(&info.config.name).unwrap();
+                    handle.id = 99999999;
+                }
+                let _ = mark_run_done.close();
+                Ok(())
+            },
+        );
+
+        assert_ok!(
+            store
+                .create_proxy::<MockNoopListener, MockNoopRunner>(ProxyConfig {
+                    name: "foo".to_owned(),
+                    listen: "127.0.0.1:5431".to_owned(),
+                    upstream: "127.0.0.1:5432".to_owned(),
+                    enabled: true,
+                    rand_seed: Some(5),
+                })
+                .await
+        );
+        // Wait for run_proxy because other wise we remove it too fast
+        let _ = run_done.recv().await;
+
+        let result = store
+            .update_proxy::<MockNoopListener, MockNoopRunner>(
+                "foo",
+                ProxyConfig {
+                    name: "foo".to_owned(),
+                    listen: "127.0.0.1:5431".to_owned(),
+                    upstream: "127.0.0.1:5432".to_owned(),
+                    enabled: false,
+                    rand_seed: None,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!("foo", result.proxy.name);
+        assert_eq!(false, result.proxy.enabled);
+        assert_eq!(None, result.proxy.rand_seed);
+        // Keeps the toxic
+        assert_eq!("footox!", result.toxics[0].get_name());
+    }
+
+    #[tokio::test]
+    async fn remove_proxy_returns_not_found() {
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+
+        assert_eq!(
+            StoreError::NotFound(ResourceKind::Proxy),
+            store
+                .remove_proxy("nope",)
+                .await
+                .unwrap_err()
+        );
     }
 }

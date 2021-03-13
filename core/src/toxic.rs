@@ -69,14 +69,19 @@ pub enum ToxicKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Toxic {
     #[serde(flatten)]
-    pub(crate) kind: ToxicKind,
-    pub(crate) name: String,
-    pub(crate) toxicity: f32,
+    /// The kind which also contains kind-specific attributes
+    pub kind: ToxicKind,
+    /// The unique name for this toxic
+    pub name: String,
+    /// The probability of this toxic being active
+    pub toxicity: f32,
     #[serde(alias = "stream")]
-    pub(crate) direction: StreamDirection,
+    /// The direction this toxic is install on
+    pub direction: StreamDirection,
 }
 
 /// The inners of a proxy state update event passed to the proxy runner task
+#[doc(hidden)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToxicEventKind {
     /// Add a new toxic to a proxy
@@ -90,10 +95,11 @@ pub enum ToxicEventKind {
 }
 
 /// A proxy state update event passed to the proxy runner task
+#[doc(hidden)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToxicEvent {
-    pub(super) proxy_name: String,
-    pub(super) kind: ToxicEventKind,
+    pub proxy_name: String,
+    pub kind: ToxicEventKind,
 }
 
 /// The result return after the toxic event is processed. May return Ok or ToxicUpdateError
