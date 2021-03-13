@@ -85,7 +85,9 @@ mod tests {
 
     #[tokio::test]
     async fn drop_out_channel_first() {
-        drop_out_channel_first_test(|stream, sink| async move { run_bandwidth(stream, sink, 128).await })
-            .await;
+        drop_out_channel_first_test(|stream, sink| async move {
+            run_bandwidth(stream, sink, 128).await
+        })
+        .await;
     }
 }

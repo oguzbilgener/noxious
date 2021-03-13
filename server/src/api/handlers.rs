@@ -1,5 +1,9 @@
 use crate::{error::StoreError, store::Store, util};
-use noxious::{proxy::{ProxyConfig, ProxyRunner}, socket::TcpListener, toxic::Toxic};
+use noxious::{
+    proxy::{ProxyConfig, ProxyRunner},
+    socket::TcpListener,
+    toxic::Toxic,
+};
 use responses::*;
 use serde_json::Value as JsonValue;
 use std::convert::Infallible;
@@ -68,7 +72,12 @@ pub async fn update_proxy(
     new_proxy: ProxyConfig,
     store: Store,
 ) -> Result<impl Reply, Infallible> {
-    wrap_store_result(async move { store.update_proxy::<TcpListener, ProxyRunner>(&name, new_proxy).await }).await
+    wrap_store_result(async move {
+        store
+            .update_proxy::<TcpListener, ProxyRunner>(&name, new_proxy)
+            .await
+    })
+    .await
 }
 
 #[instrument(level = "info", skip(store))]

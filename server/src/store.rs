@@ -880,10 +880,7 @@ mod tests {
 
         assert_eq!(
             StoreError::NotFound(ResourceKind::Proxy),
-            store
-                .remove_proxy("nope",)
-                .await
-                .unwrap_err()
+            store.remove_proxy("nope").await.unwrap_err()
         );
     }
 }

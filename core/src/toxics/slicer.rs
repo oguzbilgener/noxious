@@ -153,9 +153,9 @@ mod tests {
 
     #[tokio::test]
     async fn variation_passthrough_once() {
-        passthrough_test(|stream, sink| async move {
-            run_slicer(stream, sink, 50, 8, 0, None).await
-        })
+        passthrough_test(
+            |stream, sink| async move { run_slicer(stream, sink, 50, 8, 0, None).await },
+        )
         .await;
     }
 }

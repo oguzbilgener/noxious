@@ -173,8 +173,8 @@ pub(super) fn update_toxic_list_in_place(
         ToxicEventKind::UpdateToxic(toxic) => {
             let old_toxic = if toxic.direction == direction {
                 toxics
-                .iter_mut()
-                .find(|el| el.get_name() == toxic.get_name())
+                    .iter_mut()
+                    .find(|el| el.get_name() == toxic.get_name())
             } else {
                 None
             };
