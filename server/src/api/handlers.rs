@@ -8,19 +8,14 @@ use responses::*;
 use serde_json::Value as JsonValue;
 use std::convert::Infallible;
 use std::future::Future;
-use tracing::{instrument, warn};
+use tracing::instrument;
 use warp::http::StatusCode;
 use warp::Reply;
 
 /// Remove all toxics from all proxies
 #[instrument(level = "info")]
 pub async fn reset_state(store: Store) -> Result<impl Reply, Infallible> {
-    if let Err(err) = store.reset_state().await {
-        warn!(
-            err = ?err,
-            "ResetState: Failed to write headers to client"
-        );
-    }
+    store.reset_state().await;
     Ok(StatusCode::NO_CONTENT)
 }
 

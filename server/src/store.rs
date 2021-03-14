@@ -63,7 +63,7 @@ impl Store {
 
     /// Remove all toxics from all proxies
     #[instrument(skip(self))]
-    pub async fn reset_state(&self) -> Result<()> {
+    pub async fn reset_state(&self) {
         let pairs: Vec<(String, RequestSender<ToxicEvent, ToxicEventResult>)> = self
             .shared
             .get_state()
@@ -79,8 +79,6 @@ impl Store {
                     .await;
             })
             .await;
-
-        Ok(())
     }
 
     #[instrument(level = "trace", skip(self))]
@@ -331,7 +329,6 @@ impl Shared {
                 event_sender,
             },
         );
-        println!("inserted");
 
         if info.config.enabled {
             tokio::spawn(async move {
@@ -423,7 +420,7 @@ impl ProxyWithToxics {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use async_trait::async_trait;
     use bmrng::RequestReceiver;
@@ -495,7 +492,15 @@ mod tests {
     }
 
     lazy_static! {
-        static ref MOCK_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+        pub static ref MOCK_LOCK: AsyncMutex<()> = AsyncMutex::new(());
+    }
+
+    /// Hack to prevent removing this proxy from the store state when the runner task ends
+    /// because we can't make this mocked run function async
+    pub fn hack_handle_id(store: Store, info: &SharedProxyInfo) {
+        let mut state = store.shared.get_state();
+        let handle = state.proxies.get_mut(&info.config.name).unwrap();
+        handle.id = 99999999;
     }
 
     async fn populate_store(store: &Store) {
@@ -546,13 +551,7 @@ mod tests {
         let st2 = store.clone();
         run_ctx.expect().return_once_st(
             move |_listener: MockNoopListener, info, mut event_receiver, _stop, closer| {
-                {
-                    // Hack to prevent removing this proxy from the store state when the runner task ends
-                    // because we can't make this mocked run function async
-                    let mut state = st2.shared.get_state();
-                    let handle = state.proxies.get_mut(&info.config.name).unwrap();
-                    handle.id = 99999999;
-                }
+                hack_handle_id(st2, &info);
                 tokio::spawn(async move {
                     // skip the first event which is add toxic
                     let (_event, mut responder) = event_receiver.recv().await.expect("closed 1");
@@ -592,7 +591,7 @@ mod tests {
                 .await
         );
 
-        assert_ok!(store.reset_state().await);
+        store.reset_state().await;
         assert_ok!(done.recv().await);
     }
 
@@ -827,13 +826,7 @@ mod tests {
         // Only calls run_proxy once because the second time it's disabled
         run_ctx.expect().return_once_st(
             move |_listener: MockNoopListener, info, _event_receiver, _stop, _closer| {
-                {
-                    // Hack to prevent removing this proxy from the store state when the runner task ends
-                    // because we can't make this mocked run function async
-                    let mut state = st2.shared.get_state();
-                    let handle = state.proxies.get_mut(&info.config.name).unwrap();
-                    handle.id = 99999999;
-                }
+                hack_handle_id(st2, &info);
                 let _ = mark_run_done.close();
                 Ok(())
             },

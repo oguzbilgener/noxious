@@ -125,7 +125,6 @@ pin_project! {
 
 #[cfg_attr(test, automock)]
 impl ReadStream {
-    // #[cfg(not(test))]
     pub(crate) fn new(inner: ReadHalf) -> ReadStream {
         ReadStream { inner }
     }
@@ -133,7 +132,6 @@ impl ReadStream {
 
 #[cfg_attr(test, automock)]
 impl WriteStream {
-    // #[cfg(not(test))]
     pub(crate) fn new(inner: WriteHalf) -> WriteStream {
         WriteStream { inner }
     }
