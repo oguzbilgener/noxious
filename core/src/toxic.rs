@@ -116,7 +116,7 @@ impl fmt::Display for StreamDirection {
 
 impl PartialEq for Toxic {
     fn eq(&self, other: &Self) -> bool {
-        return self.name == other.name;
+        self.name == other.name
     }
 }
 
@@ -136,17 +136,14 @@ impl ToxicEvent {
 
 impl ToxicKind {
     pub(crate) fn has_close_logic(&self) -> bool {
-        match self {
-            ToxicKind::SlowClose { .. } | ToxicKind::LimitData { .. } => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            ToxicKind::SlowClose { .. } | ToxicKind::LimitData { .. }
+        )
     }
 
     pub(crate) fn is_stateful(&self) -> bool {
-        match self {
-            ToxicKind::LimitData { .. } => true,
-            _ => false,
-        }
+        matches!(self, ToxicKind::LimitData { .. })
     }
 
     pub(crate) fn chunk_buffer_capacity(&self) -> usize {

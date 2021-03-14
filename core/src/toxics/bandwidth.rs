@@ -42,7 +42,7 @@ pub async fn run_bandwidth(
         while chunk.len() > rate * UNIT {
             sleep(Duration::from_millis(INTERVAL)).await;
             let to_send = chunk.split_to(UNIT);
-            if let Err(_) = output.send(to_send).await {
+            if output.send(to_send).await.is_err() {
                 return Err(io::Error::new(
                     io::ErrorKind::ConnectionReset,
                     "Write channel closed",
@@ -54,13 +54,11 @@ pub async fn run_bandwidth(
         if to_sleep.as_millis() > 0 {
             sleep(to_sleep).await;
         }
-        if !chunk.is_empty() {
-            if let Err(_) = output.send(chunk).await {
-                return Err(io::Error::new(
-                    io::ErrorKind::ConnectionReset,
-                    "Write channel closed",
-                ));
-            }
+        if !chunk.is_empty() && output.send(chunk).await.is_err() {
+            return Err(io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                "Write channel closed",
+            ));
         }
     }
 

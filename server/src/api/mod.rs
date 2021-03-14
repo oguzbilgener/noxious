@@ -23,7 +23,7 @@ fn make_filters(store: Store) -> impl Filter<Extract = impl Reply, Error = Infal
         .or(update_proxy(store.clone()).or(get_proxy(store.clone())))
         .or(create_proxy(store.clone())
             .or(remove_proxy(store.clone()))
-            .or(get_proxies(store.clone())))
+            .or(get_proxies(store)))
         .recover(handle_errors)
 }
 

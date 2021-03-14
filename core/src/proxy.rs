@@ -109,6 +109,13 @@ impl Toxics {
     }
 }
 
+struct Streams {
+    client_read: Read,
+    client_write: Write,
+    upstream_read: Read,
+    upstream_write: Write,
+}
+
 /// The proxy runner interface (defined for mocking, mainly)
 #[cfg_attr(test, automock)]
 #[async_trait]
@@ -217,24 +224,25 @@ impl Runner for ProxyRunner {
 
                 let toxics = state.lock().toxics.clone();
 
+                let streams = Streams {
+                    client_read,
+                    client_write,
+                    upstream_read,
+                    upstream_write,
+                };
+
                 let res = create_links(
                     state.clone(),
                     addr,
                     &config,
                     &mut stop,
                     toxics,
-                    client_read,
-                    client_write,
-                    upstream_read,
-                    upstream_write,
+                    streams,
                     None,
                 );
-                match res {
-                    Err(err) => {
-                        error!(err = ?err, proxy = ?&config.name, listen = ?&config.listen, "Unable to establish link for proxy");
-                        continue;
-                    }
-                    _ => {}
+                if let Err(err) = res {
+                    error!(err = ?err, proxy = ?&config.name, listen = ?&config.listen, "Unable to establish link for proxy");
+                    continue;
                 }
             } else {
                 break;
@@ -247,20 +255,14 @@ impl Runner for ProxyRunner {
     }
 }
 
-#[instrument(
-    level = "debug",
-    skip(state, client_read, client_write, upstream_read, upstream_write, stop)
-)]
+#[instrument(level = "debug", skip(state, streams, stop))]
 fn create_links(
     state: Arc<ProxyState>,
     addr: SocketAddr,
     config: &ProxyConfig,
     stop: &mut Stop,
     toxics: Toxics,
-    client_read: Read,
-    client_write: Write,
-    upstream_read: Read,
-    upstream_write: Write,
+    streams: Streams,
     previous_toxic_state_holder: Option<Arc<ToxicStateHolder>>,
 ) -> io::Result<()> {
     let mut current_state = state.lock();
@@ -290,23 +292,22 @@ fn create_links(
         addr,
         StreamDirection::Downstream,
         config.clone(),
-        links_stop.clone(),
+        links_stop,
     );
 
     let upstream_handle = upstream_link.establish(
-        client_read,
-        upstream_write,
+        streams.client_read,
+        streams.upstream_write,
         toxics.upstream,
         toxics_state_holder.clone(),
     );
     let downstream_handle = client_link.establish(
-        upstream_read,
-        client_write,
+        streams.upstream_read,
+        streams.client_write,
         toxics.downstream,
         toxics_state_holder.clone(),
     );
 
-    let addr = addr.clone();
     let state = state.clone();
     tokio::spawn(async move {
         // No need to listen for the stop signal here, we're ending as soon as one of the tasks have stopped.
@@ -410,16 +411,19 @@ async fn recreate_links(
 ) -> io::Result<()> {
     let (client_read, upstream_write) = links.client.disband().await?;
     let (upstream_read, client_write) = links.upstream.disband().await?;
+    let streams = Streams {
+        client_read,
+        client_write,
+        upstream_read,
+        upstream_write,
+    };
     create_links(
         state.clone(),
         addr,
         config,
         &mut stop.clone(),
         new_toxics,
-        client_read,
-        client_write,
-        upstream_read,
-        upstream_write,
+        streams,
         links.state_holder,
     )
 }

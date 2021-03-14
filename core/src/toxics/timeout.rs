@@ -23,7 +23,7 @@ pub async fn run_timeout(
     } else {
         input
             .take_until(sleep(Duration::from_millis(timeout)))
-            .fold((), |_, _| async move { () })
+            .fold((), |_, _| async move {})
             .await;
     }
 

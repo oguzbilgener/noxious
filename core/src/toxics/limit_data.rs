@@ -39,7 +39,7 @@ pub(crate) async fn run_limit_data(
                     chunk.truncate(remaining);
                     let to_send = chunk.len();
 
-                    if let Ok(_) = output.send(chunk).await {
+                    if output.send(chunk).await.is_ok() {
                         bytes_transmitted += to_send;
                     } else {
                         result = Err(io::Error::new(
@@ -107,7 +107,7 @@ mod tests {
         let (stop, stopper) = Stop::new();
         let handle = tokio::spawn(run_limit_data(in_stream, out_sink, stop, limit, prev_state));
 
-        let data = gen_random_bytes((to_send as usize).try_into().unwrap());
+        let data = gen_random_bytes(to_send.try_into().unwrap());
 
         let mut expected = data.clone();
         expected.truncate(limit as usize);

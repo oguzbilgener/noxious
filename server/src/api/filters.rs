@@ -162,9 +162,12 @@ pub async fn handle_errors(err: Rejection) -> Result<impl Reply, Infallible> {
     dbg!(&err);
     if err.is_not_found() {
         Ok(StatusCode::NOT_FOUND.into_response())
-    } else if let Some(_) = err.find::<warp::filters::body::BodyDeserializeError>() {
+    } else if err
+        .find::<warp::filters::body::BodyDeserializeError>()
+        .is_some()
+    {
         Ok(StatusCode::BAD_REQUEST.into_response())
-    } else if let Some(_) = err.find::<warp::reject::MethodNotAllowed>() {
+    } else if err.find::<warp::reject::MethodNotAllowed>().is_some() {
         // This is a bug in Warp, it somehow rejects with MethodNotAllowed for all routes, even those that match the method
         // - https://github.com/seanmonstar/warp/issues/77
         // - https://github.com/seanmonstar/warp/issues/451
@@ -204,9 +207,10 @@ pub(crate) mod util {
 mod tests {
     use std::{collections::HashMap, sync::Arc};
 
-    use crate::store::tests::{hack_handle_id, MockNoopListener, MockNoopRunner, MOCK_LOCK};
+    use crate::api::make_filters;
     use crate::store::tests::__mock_MockNoopRunner_Runner::__initialize_proxy::Context as IpContext;
     use crate::store::tests::__mock_MockNoopRunner_Runner::__run_proxy::Context as RpContext;
+    use crate::store::tests::{hack_handle_id, MockNoopListener, MockNoopRunner, MOCK_LOCK};
     use crate::store::ProxyWithToxics;
     use noxious::{
         proxy::ProxyConfig,
@@ -215,7 +219,7 @@ mod tests {
         toxic::{StreamDirection, Toxic, ToxicKind},
     };
     use tokio_test::assert_ok;
-    use warp::http::header::{CONTENT_LENGTH, CONTENT_TYPE};
+    use warp::http::header::{CONTENT_LENGTH, CONTENT_TYPE, USER_AGENT};
 
     use super::*;
 
@@ -428,6 +432,47 @@ mod tests {
         let body: ProxyWithToxics = serde_json::from_slice(reply.body()).unwrap();
         assert_eq!(&config, &body.proxy);
         assert_eq!(&toxic, &body.toxics[0]);
+    }
+
+    #[tokio::test]
+    async fn version_filter() {
+        let filter = version();
+        let reply = warp::test::request()
+            .method("GET")
+            .path("/version")
+            .reply(&filter)
+            .await;
+        let body = std::str::from_utf8(reply.body()).unwrap();
+        assert_eq!(crate::util::get_version(), body);
+    }
+
+    #[tokio::test]
+    async fn allows_custom_clients() {
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let filter = make_filters(store);
+        let reply = warp::test::request()
+            .method("GET")
+            .path("/version")
+            .header(USER_AGENT, "mybrowser/1.0")
+            .reply(&filter)
+            .await;
+        assert_eq!(StatusCode::OK, reply.status());
+    }
+
+    #[tokio::test]
+    async fn disallows_firefox() {
+        let agent = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:86.0) Gecko/20100101 Firefox/86.0";
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let filter = make_filters(store);
+        let reply = warp::test::request()
+            .method("GET")
+            .path("/version")
+            .header(USER_AGENT, agent)
+            .reply(&filter)
+            .await;
+        assert_eq!(StatusCode::FORBIDDEN, reply.status());
     }
 
     #[tokio::test]

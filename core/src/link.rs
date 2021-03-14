@@ -39,15 +39,14 @@ impl Link {
         stop: Stop,
     ) -> Self {
         let (stop, stopper) = stop.fork();
-        let link = Link {
+        Link {
             config,
             upstream_addr,
             direction,
             stop,
             stopper,
             disband_receiver: None,
-        };
-        link
+        }
     }
 
     pub(super) fn establish(
@@ -77,7 +76,7 @@ impl Link {
         tokio::spawn(async move {
             if !stop.stop_received() {
                 let forward_res = forward(&mut reader, &mut writer, &mut stop).await;
-                if let Err(_) = forward_res {
+                if forward_res.is_err() {
                     // TODO: maybe log this error in case it's a specific I/O error.
                 }
             }
@@ -150,23 +149,20 @@ impl Link {
         let toxic_name = runner.toxic_name();
         let toxic_state =
             toxic_state_holder.and_then(|holder| holder.get_state_for_toxic(toxic_name));
-        let stop = stop.clone();
+        let mut stop = stop.clone();
         let rand_seed = self.config.rand_seed;
         // Get the desired channel buffer capacity for the toxic (in number of chunks)
         // This is 1024 for the Latency toxic and 1 for others, similar
         // to the original Toxiproxy implementation.
         let (pipe_tx, pipe_rx) =
             futures_mpsc::channel::<Bytes>(runner.toxic_kind().chunk_buffer_capacity());
-        let mut stop = stop.clone();
         tokio::spawn(async move {
             let maybe_res = tokio::select! {
                 res = runner.run(prev_pipe_read_rx, pipe_tx, toxic_state, rand_seed) => Some(res),
                 _ = stop.recv() => None,
             };
-            if let Some(res) = maybe_res {
-                if let Err(err) = res {
-                    debug!("Got error from toxic runner {:?}", err);
-                }
+            if let Some(Err(err)) = maybe_res {
+                debug!("Got error from toxic runner {:?}", err);
             }
         });
         pipe_rx
@@ -339,10 +335,9 @@ impl ToxicRunner {
     }
 
     fn take_override_stop(&mut self) -> Stop {
-        self.override_stop.take().expect(&format!(
-            "State error: cannot run toxic {} without a override stop signal",
-            self.toxic
-        ))
+        self.override_stop
+            .take()
+            .expect("State error: cannot run toxic without a override stop signal")
     }
 
     pub async fn run(

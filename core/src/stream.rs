@@ -83,7 +83,7 @@ pub(crate) async fn forward_write(
             _ = stop.recv() => None
         };
         if let Some(chunk) = maybe_chunk {
-            if let Err(_) = writer.send(chunk.into()).await {
+            if writer.send(chunk).await.is_err() {
                 // writer channel closed
                 break;
             }

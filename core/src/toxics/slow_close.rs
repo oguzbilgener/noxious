@@ -22,7 +22,7 @@ pub(crate) async fn run_slow_close(
             _ = stop.recv() => None,
         };
         if let Some(chunk) = maybe_chunk {
-            if let Err(_) = output.send(chunk).await {
+            if output.send(chunk).await.is_err() {
                 res = Err(io::Error::new(
                     io::ErrorKind::ConnectionReset,
                     "Write channel closed",

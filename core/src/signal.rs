@@ -51,8 +51,8 @@ impl Stop {
         let forked_sender = forked_stop.sender.clone();
         let mut original_receiver = self.sender.subscribe();
         tokio::spawn(async move {
-            while let Ok(_) = original_receiver.recv().await {
-                if let Err(_) = forked_sender.send(()) {
+            while original_receiver.recv().await.is_ok() {
+                if forked_sender.send(()).is_err() {
                     // Channel closed, we can no longer forward signal from original to fork
                     break;
                 }

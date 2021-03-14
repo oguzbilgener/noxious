@@ -200,7 +200,7 @@ impl Store {
 
         match result {
             Ok(_) => Ok(toxic),
-            Err(err) => Err(err.into()),
+            Err(err) => Err(err),
         }
     }
 
@@ -254,7 +254,7 @@ impl Store {
 
         match result {
             Ok(_) => Ok(toxic),
-            Err(err) => Err(err.into()),
+            Err(err) => Err(err),
         }
     }
 
@@ -272,7 +272,7 @@ impl Store {
 
         match result {
             Ok(_) => Ok(()),
-            Err(err) => Err(err.into()),
+            Err(err) => Err(err),
         }
     }
 }

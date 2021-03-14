@@ -21,10 +21,10 @@ pub async fn run_slicer(
     pin!(output);
 
     while let Some(chunk) = input.next().await {
-        let mut slice_iter = SliceIter::new(chunk, average_size, size_variation, rand_seed);
-        while let Some(slice) = slice_iter.next() {
+        let slice_iter = SliceIter::new(chunk, average_size, size_variation, rand_seed);
+        for slice in slice_iter {
             sleep(Duration::from_micros(delay)).await;
-            if let Err(_) = output.send(slice).await {
+            if output.send(slice).await.is_err() {
                 return Err(io::Error::new(
                     io::ErrorKind::ConnectionReset,
                     "Write channel closed",
@@ -40,7 +40,8 @@ enum SliceIterKind {
     ConstantSized,
     VariableSized {
         size_variation: usize,
-        rand_gen: StdRng,
+        // Boxed to keep the variant size variation small
+        rand_gen: Box<StdRng>,
     },
 }
 
@@ -68,7 +69,7 @@ impl SliceIter {
                 size_variation: size_variation
                     .try_into()
                     .expect("Could not convert size_variation from u64 to usize"),
-                rand_gen,
+                rand_gen: Box::new(rand_gen),
             }
         } else {
             SliceIterKind::ConstantSized
@@ -88,7 +89,7 @@ impl SliceIter {
                 let slice = data.split_to(position);
                 self.data = Some(data);
                 Some(slice)
-            } else if data.len() > 0 {
+            } else if !data.is_empty() {
                 Some(data)
             } else {
                 None
@@ -103,7 +104,7 @@ impl Iterator for SliceIter {
     type Item = Bytes;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(_) = &self.data {
+        if self.data.is_some() {
             match &mut self.kind {
                 SliceIterKind::ConstantSized => self.slice_data(self.average_size),
                 SliceIterKind::VariableSized {
