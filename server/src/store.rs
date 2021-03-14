@@ -730,6 +730,7 @@ pub mod tests {
         let foo = result.iter().find(|el| el.proxy.name == "foo").unwrap();
         let bar = result.iter().find(|el| el.proxy.name == "bar").unwrap();
         let baz = result.iter().find(|el| el.proxy.name == "baz").unwrap();
+        assert_eq!(1, foo.toxics.len());
         assert_eq!("footox1", foo.toxics[0].get_name());
         assert_eq!("bartox1", bar.toxics[0].get_name());
         assert_eq!("baztox1", baz.toxics[0].get_name());
@@ -771,6 +772,7 @@ pub mod tests {
         );
         let result = store.get_proxy("foo").await.unwrap();
         assert_eq!("foo", result.proxy.name);
+        assert_eq!(1, result.toxics.len());
         assert_eq!("footox1", result.toxics[0].get_name());
     }
 

@@ -205,16 +205,21 @@ mod tests {
     use std::{collections::HashMap, sync::Arc};
 
     use crate::store::tests::{hack_handle_id, MockNoopListener, MockNoopRunner, MOCK_LOCK};
+    use crate::store::tests::__mock_MockNoopRunner_Runner::__initialize_proxy::Context as IpContext;
+    use crate::store::tests::__mock_MockNoopRunner_Runner::__run_proxy::Context as RpContext;
     use crate::store::ProxyWithToxics;
     use noxious::{
         proxy::ProxyConfig,
         signal::Stop,
         state::{ProxyState, SharedProxyInfo},
+        toxic::{StreamDirection, Toxic, ToxicKind},
     };
     use tokio_test::assert_ok;
-    use warp::http::header::CONTENT_LENGTH;
+    use warp::http::header::{CONTENT_LENGTH, CONTENT_TYPE};
 
     use super::*;
+
+    struct MockHandle(IpContext, RpContext);
 
     #[tokio::test]
     async fn reset_filter() {
@@ -229,23 +234,7 @@ mod tests {
         assert_eq!(StatusCode::NO_CONTENT, reply.status());
     }
 
-    async fn insert_proxies(store: Store) {
-        let proxies = vec![
-            ProxyConfig {
-                name: "foo".to_owned(),
-                listen: "127.0.0.1:5431".to_owned(),
-                upstream: "127.0.0.1:5432".to_owned(),
-                enabled: true,
-                rand_seed: None,
-            },
-            ProxyConfig {
-                name: "bar".to_owned(),
-                listen: "127.0.0.1:27017".to_owned(),
-                upstream: "127.0.0.1:27018".to_owned(),
-                enabled: false,
-                rand_seed: None,
-            },
-        ];
+    fn mock_proxy_runner(store: Store) -> MockHandle {
         let init_ctx = MockNoopRunner::initialize_proxy_context();
         let run_ctx = MockNoopRunner::run_proxy_context();
         init_ctx.expect().returning(|config, initial_toxics| {
@@ -257,14 +246,33 @@ mod tests {
             Ok((listener, proxy_info))
         });
 
-        // let (done, mark_done) = Close::new();
-        let st2 = store.clone();
         run_ctx.expect().returning(
             move |_listener: MockNoopListener, info, _event_receiver, _stop, _closer| {
-                hack_handle_id(st2.clone(), &info);
+                hack_handle_id(store.clone(), &info);
+                dbg!(&store);
                 Ok(())
             },
         );
+        MockHandle(init_ctx, run_ctx)
+    }
+
+    async fn insert_proxies(store: &Store) {
+        let proxies = vec![
+            ProxyConfig {
+                name: "server1".to_owned(),
+                listen: "127.0.0.1:5431".to_owned(),
+                upstream: "127.0.0.1:5432".to_owned(),
+                enabled: true,
+                rand_seed: None,
+            },
+            ProxyConfig {
+                name: "server2".to_owned(),
+                listen: "127.0.0.1:27017".to_owned(),
+                upstream: "127.0.0.1:27018".to_owned(),
+                enabled: false,
+                rand_seed: None,
+            },
+        ];
         assert_ok!(
             store
                 .populate::<MockNoopListener, MockNoopRunner>(proxies)
@@ -279,14 +287,14 @@ mod tests {
         let filter = populate(store);
         let proxies = vec![
             ProxyConfig {
-                name: "foo".to_owned(),
+                name: "server1".to_owned(),
                 listen: "127.0.0.1:5431".to_owned(),
                 upstream: "127.0.0.1:5432".to_owned(),
                 enabled: true,
                 rand_seed: None,
             },
             ProxyConfig {
-                name: "bar".to_owned(),
+                name: "server2".to_owned(),
                 listen: "127.0.0.1:27017".to_owned(),
                 upstream: "127.0.0.1:27018".to_owned(),
                 enabled: false,
@@ -322,8 +330,8 @@ mod tests {
         let (stop, _stopper) = Stop::new();
         let store = Store::new(stop, None);
         let filter = get_proxies(store.clone());
-
-        insert_proxies(store).await;
+        let _handle = mock_proxy_runner(store.clone());
+        insert_proxies(&store).await;
 
         let req = warp::test::request().method("GET").path("/proxies");
         let reply = req.reply(&filter).await;
@@ -332,14 +340,94 @@ mod tests {
         let proxies: HashMap<String, ProxyWithToxics> =
             serde_json::from_slice(body).expect("failed to parse body");
         assert_eq!(2, proxies.len());
-        let foo = proxies.get("foo").unwrap();
-        assert_eq!("127.0.0.1:5431", foo.proxy.listen);
-        assert_eq!("127.0.0.1:5432", foo.proxy.upstream);
-        assert_eq!(true, foo.proxy.enabled);
-        let bar = proxies.get("bar").unwrap();
-        assert_eq!("127.0.0.1:27017", bar.proxy.listen);
-        assert_eq!("127.0.0.1:27018", bar.proxy.upstream);
-        assert_eq!(false, bar.proxy.enabled);
+        let server1 = proxies.get("server1").unwrap();
+        assert_eq!("127.0.0.1:5431", server1.proxy.listen);
+        assert_eq!("127.0.0.1:5432", server1.proxy.upstream);
+        assert_eq!(true, server1.proxy.enabled);
+        let server2 = proxies.get("server2").unwrap();
+        assert_eq!("127.0.0.1:27017", server2.proxy.listen);
+        assert_eq!("127.0.0.1:27018", server2.proxy.upstream);
+        assert_eq!(false, server2.proxy.enabled);
+    }
+
+    #[tokio::test]
+    async fn create_proxy_conflict() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let filter = create_proxy(store.clone());
+        let _handle = mock_proxy_runner(store.clone());
+        insert_proxies(&store).await;
+
+        let payload = serde_json::to_vec(&ProxyConfig {
+            name: "server1".to_owned(),
+            listen: "127.0.0.1:1234".to_owned(),
+            upstream: "127.0.0.1:1235".to_owned(),
+            enabled: true,
+            rand_seed: None,
+        })
+        .unwrap();
+
+        let req = warp::test::request()
+            .method("POST")
+            .path("/proxies")
+            .header(CONTENT_TYPE, "application/json")
+            .body(payload);
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::CONFLICT, reply.status());
+    }
+
+    #[tokio::test]
+    async fn create_and_get_proxy() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let _handle = mock_proxy_runner(store.clone());
+
+        let create_filter = create_proxy(store.clone());
+        let create_toxic_filter = create_toxic(store.clone());
+        let get_filter = get_proxy(store.clone());
+
+        let config = ProxyConfig {
+            name: "server1".to_owned(),
+            listen: "127.0.0.1:1234".to_owned(),
+            upstream: "127.0.0.1:1235".to_owned(),
+            enabled: true,
+            rand_seed: None,
+        };
+        let toxic = Toxic {
+            kind: ToxicKind::Noop,
+            name: "stub".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+        let payload = serde_json::to_vec(&config).unwrap();
+
+        let req = warp::test::request()
+            .method("POST")
+            .path("/proxies")
+            .header(CONTENT_TYPE, "application/json")
+            .body(&payload);
+        let reply = req.reply(&create_filter).await;
+        assert_eq!(StatusCode::CREATED, reply.status());
+
+        let payload = serde_json::to_vec(&toxic).unwrap();
+        let req = warp::test::request()
+            .method("POST")
+            .path("/proxies/server1/toxics")
+            .header(CONTENT_TYPE, "application/json")
+            .body(&payload);
+        let reply = req.reply(&create_toxic_filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&toxic, &body);
+
+        let req = warp::test::request().method("GET").path("/proxies/server1");
+        let reply = req.reply(&get_filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: ProxyWithToxics = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&config, &body.proxy);
+        assert_eq!(&toxic, &body.toxics[0]);
     }
 
     #[tokio::test]
