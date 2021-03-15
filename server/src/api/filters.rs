@@ -594,6 +594,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_update_toxic() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let filter = make_filters(store.clone());
+        let _handle = mock_proxy_runner(store.clone());
+        insert_proxies(&store).await;
+
+        let toxic = Toxic {
+            kind: ToxicKind::Noop,
+            name: "stub".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+        let updated_toxic = Toxic {
+            kind: ToxicKind::Timeout { timeout: 500 },
+            name: "stub".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+
+        // Create a toxic to make sure the response body of update includes the toxic too
+        let payload = serde_json::to_vec(&toxic).unwrap();
+        let req = warp::test::request()
+            .method("POST")
+            .path("/proxies/server1/toxics")
+            .header(CONTENT_TYPE, "application/json")
+            .body(&payload);
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&toxic, &body);
+
+        let req = warp::test::request()
+            .method("GET")
+            .path("/proxies/server1/toxics/stub");
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&toxic, &body);
+
+        let payload = serde_json::to_vec(&toxic).unwrap();
+        let req = warp::test::request()
+            .method("POST")
+            .path("/proxies/server1/toxics/stub")
+            .header(CONTENT_TYPE, "application/json")
+            .body(&payload);
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&updated_toxic, &body);
+
+        let req = warp::test::request()
+            .method("GET")
+            .path("/proxies/server1/toxics/stub");
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&updated_toxic, &body);
+    }
+
+    #[tokio::test]
     async fn test_remove_toxic() {
         let _lock = MOCK_LOCK.lock().await;
         let (stop, _stopper) = Stop::new();
@@ -622,8 +684,8 @@ mod tests {
         assert_eq!(&toxic, &body);
 
         let req = warp::test::request()
-        .method("GET")
-        .path("/proxies/server1/toxics/stub");
+            .method("GET")
+            .path("/proxies/server1/toxics/stub");
         let reply = req.reply(&filter).await;
         assert_eq!(StatusCode::OK, reply.status());
         let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
