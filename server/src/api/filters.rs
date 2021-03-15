@@ -128,7 +128,7 @@ pub fn update_toxic(store: Store) -> impl Filter<Extract = impl Reply, Error = R
 
 /// DELETE /proxies/{proxy}/toxics/{toxic}
 pub fn remove_toxic(store: Store) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::post()
+    warp::delete()
         .and(warp::path("proxies"))
         .and(warp::path::param())
         .and(warp::path("toxics"))
@@ -510,11 +510,150 @@ mod tests {
         let filter = make_filters(store.clone());
         let _handle = mock_proxy_runner(store.clone());
         insert_proxies(&store).await;
-        let req = warp::test::request()
-            .method("DELETE")
-            .path("/proxies/blah");
+        let req = warp::test::request().method("DELETE").path("/proxies/blah");
         let reply = req.reply(&filter).await;
         assert_eq!(StatusCode::NOT_FOUND, reply.status());
+    }
+
+    #[tokio::test]
+    async fn test_get_toxics() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let filter = make_filters(store.clone());
+        let _handle = mock_proxy_runner(store.clone());
+        insert_proxies(&store).await;
+
+        let toxic = Toxic {
+            kind: ToxicKind::Latency {
+                latency: 25,
+                jitter: 5,
+            },
+            name: "stub".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Downstream,
+        };
+
+        // Create a toxic to make sure the response body of update includes the toxic too
+        let payload = serde_json::to_vec(&toxic).unwrap();
+        let req = warp::test::request()
+            .method("POST")
+            .path("/proxies/server1/toxics")
+            .header(CONTENT_TYPE, "application/json")
+            .body(&payload);
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&toxic, &body);
+
+        let req = warp::test::request()
+            .method("GET")
+            .path("/proxies/server1/toxics");
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let toxics: Vec<Toxic> = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(1, toxics.len());
+        assert_eq!(&toxic, &toxics[0]);
+    }
+
+    #[tokio::test]
+    async fn test_get_toxic() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let filter = make_filters(store.clone());
+        let _handle = mock_proxy_runner(store.clone());
+        insert_proxies(&store).await;
+
+        let toxic = Toxic {
+            kind: ToxicKind::Noop,
+            name: "stub".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+
+        // Create a toxic to make sure the response body of update includes the toxic too
+        let payload = serde_json::to_vec(&toxic).unwrap();
+        let req = warp::test::request()
+            .method("POST")
+            .path("/proxies/server1/toxics")
+            .header(CONTENT_TYPE, "application/json")
+            .body(&payload);
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&toxic, &body);
+
+        let req = warp::test::request()
+            .method("GET")
+            .path("/proxies/server1/toxics/stub");
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&toxic, &body);
+    }
+
+    #[tokio::test]
+    async fn test_remove_toxic() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let filter = make_filters(store.clone());
+        let _handle = mock_proxy_runner(store.clone());
+        insert_proxies(&store).await;
+
+        let toxic = Toxic {
+            kind: ToxicKind::Noop,
+            name: "stub".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+
+        // Create a toxic to make sure the response body of update includes the toxic too
+        let payload = serde_json::to_vec(&toxic).unwrap();
+        let req = warp::test::request()
+            .method("POST")
+            .path("/proxies/server1/toxics")
+            .header(CONTENT_TYPE, "application/json")
+            .body(&payload);
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&toxic, &body);
+
+        let req = warp::test::request()
+        .method("GET")
+        .path("/proxies/server1/toxics/stub");
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&toxic, &body);
+
+        let req = warp::test::request()
+            .method("DELETE")
+            .path("/proxies/server1/toxics/stub");
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::NO_CONTENT, reply.status());
+
+        let req = warp::test::request()
+            .method("DELETE")
+            .path("/proxies/server1/toxics");
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::NOT_FOUND, reply.status());
+
+        let req = warp::test::request()
+            .method("GET")
+            .path("/proxies/server1/toxics/stub");
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::NOT_FOUND, reply.status());
+
+        let req = warp::test::request()
+            .method("GET")
+            .path("/proxies/server1/toxics");
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let toxics: Vec<Toxic> = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(0, toxics.len());
     }
 
     #[tokio::test]
