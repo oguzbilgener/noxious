@@ -82,7 +82,7 @@ impl ProxyConfig {
 
 impl Toxics {
     /// Initialize an empty set up toxics
-    pub fn noop() -> Self {
+    pub fn empty() -> Self {
         Toxics {
             upstream: Vec::new(),
             downstream: Vec::new(),
@@ -338,7 +338,8 @@ fn create_links(
     Ok(())
 }
 
-async fn listen_toxic_events(
+#[doc(hidden)]
+pub async fn listen_toxic_events(
     state: Arc<ProxyState>,
     mut receiver: RequestReceiver<ToxicEvent, ToxicEventResult>,
     mut stop: Stop,

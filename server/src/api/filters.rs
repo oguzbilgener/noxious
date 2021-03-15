@@ -159,7 +159,6 @@ pub fn disallow_browsers() -> impl Filter<Extract = impl Reply, Error = Rejectio
 }
 
 pub async fn handle_errors(err: Rejection) -> Result<impl Reply, Infallible> {
-    dbg!(&err);
     if err.is_not_found() {
         Ok(StatusCode::NOT_FOUND.into_response())
     } else if err
@@ -251,9 +250,14 @@ mod tests {
         });
 
         run_ctx.expect().returning(
-            move |_listener: MockNoopListener, info, _event_receiver, _stop, _closer| {
+            move |_listener: MockNoopListener, info, event_receiver, stop, _closer| {
                 hack_handle_id(store.clone(), &info);
-                dbg!(&store);
+                tokio::spawn(noxious::proxy::listen_toxic_events(
+                    info.state,
+                    event_receiver,
+                    stop,
+                    info.config,
+                ));
                 Ok(())
             },
         );
@@ -432,6 +436,85 @@ mod tests {
         let body: ProxyWithToxics = serde_json::from_slice(reply.body()).unwrap();
         assert_eq!(&config, &body.proxy);
         assert_eq!(&toxic, &body.toxics[0]);
+    }
+
+    #[tokio::test]
+    async fn test_update_proxy() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let filter = make_filters(store.clone());
+        let _handle = mock_proxy_runner(store.clone());
+        insert_proxies(&store).await;
+
+        let disabled_config = ProxyConfig {
+            name: "server1".to_owned(),
+            listen: "127.0.0.1:1234".to_owned(),
+            upstream: "127.0.0.1:1235".to_owned(),
+            enabled: false,
+            rand_seed: None,
+        };
+        let toxic = Toxic {
+            kind: ToxicKind::Noop,
+            name: "stub".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+
+        // Create a toxic to make sure the response body of update includes the toxic too
+        let payload = serde_json::to_vec(&toxic).unwrap();
+        let req = warp::test::request()
+            .method("POST")
+            .path("/proxies/server1/toxics")
+            .header(CONTENT_TYPE, "application/json")
+            .body(&payload);
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&toxic, &body);
+
+        let payload = serde_json::to_vec(&disabled_config).unwrap();
+
+        let req = warp::test::request()
+            .method("POST")
+            .path("/proxies/server1")
+            .header(CONTENT_TYPE, "application/json")
+            .body(&payload);
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: ProxyWithToxics = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&disabled_config, &body.proxy);
+        assert_eq!(&toxic, &body.toxics[0]);
+    }
+
+    #[tokio::test]
+    async fn test_remove_proxy() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let filter = make_filters(store.clone());
+        let _handle = mock_proxy_runner(store.clone());
+        insert_proxies(&store).await;
+        let req = warp::test::request()
+            .method("DELETE")
+            .path("/proxies/server1");
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::NO_CONTENT, reply.status());
+    }
+
+    #[tokio::test]
+    async fn test_remove_proxy_not_found() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let filter = make_filters(store.clone());
+        let _handle = mock_proxy_runner(store.clone());
+        insert_proxies(&store).await;
+        let req = warp::test::request()
+            .method("DELETE")
+            .path("/proxies/blah");
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::NOT_FOUND, reply.status());
     }
 
     #[tokio::test]

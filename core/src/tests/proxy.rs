@@ -37,7 +37,7 @@ async fn initialize_proxy_no_toxics_accept_fails() {
         Ok(m)
     });
 
-    let toxics = Toxics::noop();
+    let toxics = Toxics::empty();
     let proxy = ProxyRunner::initialize_proxy::<MockMemoryListener>(config, toxics).await;
     assert_ok!(&proxy);
     let (listener, info) = proxy.unwrap();
@@ -127,7 +127,7 @@ async fn run_proxy_no_toxics_forward() {
             Ok(stream)
         });
 
-    let toxics = Toxics::noop();
+    let toxics = Toxics::empty();
     let proxy = ProxyRunner::initialize_proxy::<MockMemoryListener>(config, toxics).await;
     assert_ok!(&proxy);
     let (listener, info) = proxy.unwrap();
@@ -202,7 +202,6 @@ async fn run_proxy_with_slicer() {
 
     upstream_handle_write.write(b"upstream writes");
     upstream_handle_read.read(b"client writes");
-    // TODO: mock into_split with the mock stream instead of the real thing
     upstream_ctx
         .expect()
         .with(predicate::eq(upstream))

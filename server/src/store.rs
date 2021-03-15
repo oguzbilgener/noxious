@@ -114,7 +114,11 @@ impl Store {
         let mut created_proxies = Vec::with_capacity(input.len());
 
         for config in input {
-            match self.shared.create_proxy::<L, R>(config).await {
+            match self
+                .shared
+                .create_proxy::<L, R>(config, Toxics::empty())
+                .await
+            {
                 Ok(shared_proxy_info) => {
                     created_proxies.push(shared_proxy_info);
                 }
@@ -151,7 +155,10 @@ impl Store {
         L: SocketListener + 'static,
         R: Runner + 'static,
     {
-        let shared_proxy_info = self.shared.create_proxy::<L, R>(config).await?;
+        let shared_proxy_info = self
+            .shared
+            .create_proxy::<L, R>(config, Toxics::empty())
+            .await?;
         Ok(ProxyWithToxics::from_shared_proxy_info(shared_proxy_info))
     }
 
@@ -175,8 +182,10 @@ impl Store {
         L: SocketListener + 'static,
         R: Runner + 'static,
     {
-        self.shared.remove_proxy(proxy_name).await?;
-        let shared_proxy_info = self.shared.create_proxy::<L, R>(new_config).await?;
+        let proxy_info = self.shared.remove_proxy(proxy_name).await?;
+        let toxics = proxy_info.state.lock().toxics.clone();
+
+        let shared_proxy_info = self.shared.create_proxy::<L, R>(new_config, toxics).await?;
         Ok(ProxyWithToxics::from_shared_proxy_info(shared_proxy_info))
     }
 
@@ -298,6 +307,7 @@ impl Shared {
     async fn create_proxy<L, R>(
         self: &Arc<Self>,
         mut config: ProxyConfig,
+        toxics: Toxics,
     ) -> Result<SharedProxyInfo>
     where
         L: SocketListener + 'static,
@@ -311,7 +321,7 @@ impl Shared {
             config.rand_seed = Some(rand_seed);
         }
         let proxy_name = config.name.clone();
-        let (listener, proxy_info) = R::initialize_proxy::<L>(config, Toxics::noop()).await?;
+        let (listener, proxy_info) = R::initialize_proxy::<L>(config, toxics).await?;
         let info = proxy_info.clone();
         let shared = self.clone();
         let (stop, proxy_stopper) = self.stop.fork();
@@ -499,8 +509,9 @@ pub mod tests {
     /// because we can't make this mocked run function async
     pub fn hack_handle_id(store: Store, info: &SharedProxyInfo) {
         let mut state = store.shared.get_state();
-        let handle = state.proxies.get_mut(&info.config.name).unwrap();
-        handle.id = 99999999;
+        if let Some(mut handle) = state.proxies.get_mut(&info.config.name) {
+            handle.id = 99999999;
+        }
     }
 
     async fn populate_store(store: &Store) {

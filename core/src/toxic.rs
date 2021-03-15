@@ -207,8 +207,8 @@ impl fmt::Display for ToxicKind {
             ToxicKind::Noop => {
                 write!(f, "Noop")
             }
-            ToxicKind::Latency { latency, .. } => {
-                write!(f, "Latency({})", latency)
+            ToxicKind::Latency { latency, jitter } => {
+                write!(f, "Latency({}, {})", latency, jitter)
             }
             ToxicKind::Timeout { timeout } => {
                 write!(f, "Timeout({})", timeout)
@@ -219,8 +219,12 @@ impl fmt::Display for ToxicKind {
             ToxicKind::SlowClose { delay } => {
                 write!(f, "SlowClose({})", delay)
             }
-            ToxicKind::Slicer { average_size, .. } => {
-                write!(f, "Slicer({})", average_size)
+            ToxicKind::Slicer {
+                average_size,
+                size_variation,
+                delay,
+            } => {
+                write!(f, "Slicer({}, {}, {})", average_size, size_variation, delay)
             }
             ToxicKind::LimitData { bytes } => {
                 write!(f, "LimitData({})", bytes)
@@ -230,12 +234,103 @@ impl fmt::Display for ToxicKind {
 }
 
 #[cfg(test)]
-mod serde_tests {
+mod tests {
     use super::*;
     use serde_json::{from_str, to_string, Error as SerdeError};
 
     #[test]
-    fn test_noop() {
+    fn test_display_noop() {
+        let toxic = Toxic {
+            kind: ToxicKind::Noop,
+            name: "boo".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+        let expected = "boo: Noop";
+        assert_eq!(expected, toxic.to_string());
+    }
+
+    #[test]
+    fn test_display_latency() {
+        let toxic = Toxic {
+            kind: ToxicKind::Latency {
+                latency: 49,
+                jitter: 5,
+            },
+            name: "t2".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+        let expected = "t2: Latency(49, 5)";
+        assert_eq!(expected, toxic.to_string());
+    }
+
+    #[test]
+    fn test_display_timeout() {
+        let toxic = Toxic {
+            kind: ToxicKind::Timeout { timeout: 2000 },
+            name: "t3".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+        let expected = "t3: Timeout(2000)";
+        assert_eq!(expected, toxic.to_string());
+    }
+
+    #[test]
+    fn test_display_bandwidth() {
+        let toxic = Toxic {
+            kind: ToxicKind::Bandwidth { rate: 2345 },
+            name: "t4".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+        let expected = "t4: Bandwidth(2345)";
+        assert_eq!(expected, toxic.to_string());
+    }
+
+    #[test]
+    fn test_display_slicer() {
+        let toxic = Toxic {
+            kind: ToxicKind::Slicer {
+                average_size: 128,
+                size_variation: 64,
+                delay: 100,
+            },
+            name: "t5".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+        let expected = "t5: Slicer(128, 64, 100)";
+        assert_eq!(expected, toxic.to_string());
+    }
+
+    #[test]
+    fn test_display_slow_close() {
+        let toxic = Toxic {
+            kind: ToxicKind::SlowClose { delay: 1200 },
+            name: "t6".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+        let expected = "t6: SlowClose(1200)";
+        assert_eq!(expected, toxic.to_string());
+    }
+
+    #[test]
+    fn test_display_limit_data() {
+        let toxic = Toxic {
+            kind: ToxicKind::LimitData { bytes: 64500 },
+            name: "t7".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+        let expected = "t7: LimitData(64500)";
+        assert_eq!(expected, toxic.to_string());
+    }
+
+    #[test]
+    fn test_noop_serde() {
         let toxic = Toxic {
             kind: ToxicKind::Noop,
             name: "foo".to_owned(),
@@ -252,7 +347,7 @@ mod serde_tests {
     }
 
     #[test]
-    fn test_latency() {
+    fn test_latency_serde() {
         let toxic = Toxic {
             kind: ToxicKind::Latency {
                 latency: 4321,
