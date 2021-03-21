@@ -1039,10 +1039,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "noxious"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e68998924150ba54dbf1adf4c3f7f7c10bb5d3c6789ab71af11e34fe4c667970"
+dependencies = [
+ "async-trait",
+ "bmrng",
+ "bytes",
+ "futures",
+ "mockall_double",
+ "pin-project-lite",
+ "rand 0.8.3",
+ "serde",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "noxious-client"
 version = "0.1.0"
 dependencies = [
- "noxious",
+ "noxious 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "reqwest",
  "serde",
  "serde_json",
@@ -1064,7 +1084,7 @@ dependencies = [
  "lazy_static",
  "log",
  "mockall",
- "noxious",
+ "noxious 0.1.1",
  "opentelemetry",
  "pretty_env_logger",
  "serde",

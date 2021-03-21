@@ -1,6 +1,7 @@
 [package]
 name = "noxious-client"
 version = "0.1.0"
+description = "An async client library for Toxiproxy and its Rust port, Noxious"
 authors = ["Oguz Bilgener <oguz@bilgener.me>"]
 edition = "2018"
 documentation = "https://docs.rs/noxious-client"
@@ -25,8 +26,8 @@ codecov = { repository = "oguzbilgener/noxious", branch = "main", service = "git
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-# TODO: use the published core library
-noxious = { path = "../core" }
+# noxious = { path = "../core" }
+noxious = { version = "0.1.1" }
 reqwest = { version = "0.11", features = ["json"] }
 tokio = { version = "1", features = ["macros", "sync", "net", "rt", "signal"] }
 thiserror = "1.0.24"
