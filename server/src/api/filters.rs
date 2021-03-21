@@ -210,9 +210,8 @@ mod tests {
     use crate::store::tests::__mock_MockNoopRunner_Runner::__initialize_proxy::Context as IpContext;
     use crate::store::tests::__mock_MockNoopRunner_Runner::__run_proxy::Context as RpContext;
     use crate::store::tests::{hack_handle_id, MockNoopListener, MockNoopRunner, MOCK_LOCK};
-    use crate::store::ProxyWithToxics;
     use noxious::{
-        proxy::ProxyConfig,
+        proxy::{ProxyConfig, ProxyWithToxics},
         signal::Stop,
         state::{ProxyState, SharedProxyInfo},
         toxic::{StreamDirection, Toxic, ToxicKind},

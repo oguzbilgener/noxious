@@ -2,13 +2,12 @@ use crate::error::{ResourceKind, StoreError};
 use bmrng::RequestSender;
 use futures::{stream, StreamExt};
 use noxious::{
-    proxy::{ProxyConfig, Runner, Toxics},
+    proxy::{ProxyConfig, Runner, Toxics, ProxyWithToxics},
     signal::{Close, Stop, Stopper},
     socket::SocketListener,
     state::SharedProxyInfo,
     toxic::{Toxic, ToxicEvent, ToxicEventKind, ToxicEventResult},
 };
-use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     sync::{
@@ -403,31 +402,6 @@ impl State {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProxyWithToxics {
-    #[serde(flatten)]
-    pub proxy: ProxyConfig,
-    pub toxics: Vec<Toxic>,
-}
-
-impl ProxyWithToxics {
-    /// Create the full ProxyWithToxics from SharedProxyInfo
-    pub fn from_shared_proxy_info(info: SharedProxyInfo) -> Self {
-        let proxy_state = info.state.lock();
-        ProxyWithToxics {
-            proxy: info.clone_config(),
-            toxics: proxy_state.toxics.clone().into_vec(),
-        }
-    }
-
-    /// Create a new ProxyWithToxics with empty toxics
-    pub fn from_proxy_config(proxy_config: ProxyConfig) -> Self {
-        ProxyWithToxics {
-            proxy: proxy_config,
-            toxics: Vec::new(),
-        }
-    }
-}
 
 #[cfg(test)]
 pub mod tests {

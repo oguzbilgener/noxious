@@ -5,6 +5,7 @@ version = "0.1.1-alpha.0"
 authors = ["Oguz Bilgener <oguz@bilgener.me>"]
 repository = "https://github.com/oguzbilgener/noxious"
 edition = "2018"
+documentation = "https://docs.rs/noxious"
 license = "MIT OR Apache-2.0"
 categories = ["network-programming", "development-tools"]
 keywords = ["proxy", "toxiproxy", "chaos", "tcp"]
@@ -21,8 +22,8 @@ include = [
     "benches/**/*.rs",
 ]
 
-
 [badges]
+codecov = { repository = "oguzbilgener/noxious", branch = "main", service = "github" }
 maintenance = { status = "actively-developed" }
 
 [dependencies]
@@ -51,7 +52,6 @@ tokio = { version = "1", features = [
     "test-util",
 ] }
 mockall = "0.9.1"
-# mock-io = { version = "0.3", features = ["async-tokio"] }
 lazy_static = "1.4.0"
 serde_json = "^1.0.62"
 tokio-test = "0.4.0"

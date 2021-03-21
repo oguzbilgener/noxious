@@ -8,7 +8,7 @@ A Rust port of [Toxiproxy][toxiproxy] server, which is a TCP proxy to simulate n
 
 Noxious is fully compatible with Toxiproxy with the same REST API, so you can use the Toxiproxy CLI and all the existing [client libraries][clients] for Toxiproxy with noxious.
 
-A Rust client library as well as a CLI tool is also in active development.
+An async Rust client library is also available to interact with Noxious or Toxiproxy.
 
 
 [toxiproxy]: https://github.com/Shopify/toxiproxy

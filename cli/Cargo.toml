@@ -1,7 +1,0 @@
-[package]
-name = "noxious-cli"
-version = "0.1.0"
-authors = ["Oguz Bilgener <oguz@bilgener.me>"]
-edition = "2018"
-
-[dependencies]

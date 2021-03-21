@@ -1,6 +1,6 @@
 [workspace]
 
-members = ["core", "server", "client", "cli"]
+members = ["core", "server", "client"]
 
 [profile.dev]
 panic = "abort"

@@ -65,6 +65,17 @@ pub struct Toxics {
     pub downstream: Vec<Toxic>,
 }
 
+/// The serializable API response
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProxyWithToxics {
+    /// The proxy details
+    #[serde(flatten)]
+    pub proxy: ProxyConfig,
+    /// Toxics installed on the proxy
+    pub toxics: Vec<Toxic>,
+}
+
+
 impl ProxyConfig {
     /// Validate the proxy config, return `ProxyValidateError` if invalid
     pub fn validate(&self) -> Result<(), ProxyValidateError> {
@@ -106,6 +117,25 @@ impl Toxics {
                     .find(|toxic| toxic.name == toxic_name)
             })
             .map(|toxic| toxic.to_owned())
+    }
+}
+
+impl ProxyWithToxics {
+    /// Create the full ProxyWithToxics from SharedProxyInfo
+    pub fn from_shared_proxy_info(info: SharedProxyInfo) -> Self {
+        let proxy_state = info.state.lock();
+        ProxyWithToxics {
+            proxy: info.clone_config(),
+            toxics: proxy_state.toxics.clone().into_vec(),
+        }
+    }
+
+    /// Create a new ProxyWithToxics with empty toxics
+    pub fn from_proxy_config(proxy_config: ProxyConfig) -> Self {
+        ProxyWithToxics {
+            proxy: proxy_config,
+            toxics: Vec::new(),
+        }
     }
 }
 

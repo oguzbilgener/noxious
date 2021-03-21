@@ -3,5 +3,50 @@ name = "noxious-client"
 version = "0.1.0"
 authors = ["Oguz Bilgener <oguz@bilgener.me>"]
 edition = "2018"
+documentation = "https://docs.rs/noxious-client"
+license = "MIT OR Apache-2.0"
+categories = ["network-programming", "development-tools"]
+keywords = ["proxy", "toxiproxy", "chaos", "tcp"]
+
+include = [
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    ".gitignore",
+    "Cargo.toml",
+    "src/*.rs",
+    "src/*/*.rs",
+    "tests/*.rs",
+    "benches/**/*.rs",
+]
+
+[badges]
+codecov = { repository = "oguzbilgener/noxious", branch = "main", service = "github" }
+maintenance = { status = "actively-developed" }
 
 [dependencies]
+# TODO: use the published core library
+noxious = { path = "../core" }
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1", features = ["macros", "sync", "net", "rt", "signal"] }
+thiserror = "1.0.24"
+serde = { version = "^1.0.123", features = ["derive"] }
+
+
+[dev-dependencies]
+tokio = { version = "1", features = [
+    "net",
+    "sync",
+    "signal",
+    "io-util",
+    "rt",
+    "macros",
+    "time",
+    "test-util",
+] }
+tokio-test = "0.4.0"
+serde_json = "^1.0.62"
+wiremock = "0.5"
+
+[[test]]
+name = "client"

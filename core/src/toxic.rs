@@ -65,7 +65,7 @@ pub enum ToxicKind {
     },
 }
 
-/// Something that can be attached to alink to modify the way the data is passed through
+/// Something that can be attached to a link to modify the way the data is passed through
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Toxic {
     #[serde(flatten)]
