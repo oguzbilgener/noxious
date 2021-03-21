@@ -21,11 +21,11 @@
 
 //! # noxious-client
 
+mod client;
 /// The errors returned by the server
 pub mod error;
 mod proxy;
-mod client;
 pub use client::Client;
-pub use proxy::Proxy;
 pub use noxious::proxy::ProxyConfig;
-pub use noxious::toxic::{Toxic, ToxicKind, StreamDirection};
+pub use noxious::toxic::{StreamDirection, Toxic, ToxicKind};
+pub use proxy::Proxy;

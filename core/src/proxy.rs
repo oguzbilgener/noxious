@@ -75,7 +75,6 @@ pub struct ProxyWithToxics {
     pub toxics: Vec<Toxic>,
 }
 
-
 impl ProxyConfig {
     /// Validate the proxy config, return `ProxyValidateError` if invalid
     pub fn validate(&self) -> Result<(), ProxyValidateError> {

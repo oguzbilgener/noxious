@@ -2,7 +2,7 @@ use crate::error::{ResourceKind, StoreError};
 use bmrng::RequestSender;
 use futures::{stream, StreamExt};
 use noxious::{
-    proxy::{ProxyConfig, Runner, Toxics, ProxyWithToxics},
+    proxy::{ProxyConfig, ProxyWithToxics, Runner, Toxics},
     signal::{Close, Stop, Stopper},
     socket::SocketListener,
     state::SharedProxyInfo,
@@ -401,7 +401,6 @@ impl State {
         self.proxies.contains_key(name)
     }
 }
-
 
 #[cfg(test)]
 pub mod tests {
