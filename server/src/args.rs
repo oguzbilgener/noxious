@@ -4,11 +4,11 @@ use std::net::IpAddr;
 /// A Rust port of Toxiproxy server
 #[derive(Clap, Debug)]
 pub struct Args {
-    #[clap(short, long, default_value = "127.0.0.1")]
     /// The host to listen on for the API server
+    #[clap(short, long, default_value = "127.0.0.1")]
     pub host: String,
-    #[clap(short, long, default_value = "8474")]
     /// The port to listen on for the API server
+    #[clap(short, long, default_value = "8474")]
     pub port: String,
     /// json file containing proxies to create on startup
     #[clap(short, long)]
