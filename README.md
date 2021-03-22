@@ -18,7 +18,7 @@ An async Rust client library called [noxious-client] is also available to intera
 
 ### Quick Start
 
-By default the API server listens on port **8474**. This can be changed by
+By default the API server listens on port **8474**. This can be changed by providing the `--port` command line argument.
 
 #### With Docker
 
