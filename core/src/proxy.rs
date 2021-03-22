@@ -235,7 +235,7 @@ impl Runner for ProxyRunner {
                 let upstream = match Listener::Stream::connect(&config.upstream).await {
                     Ok(upstream) => upstream,
                     Err(err) => {
-                        error!(err = ?err, proxy = ?&config.name, listen = ?&config.listen, "Unable to open connection to upstream");
+                        error!(err = ?err, proxy = ?&config.name, upstream = ?&config.upstream, listen = ?&config.listen, "Unable to open connection to upstream");
                         // This is not a fatal error, can retry next time another client connects
                         continue;
                     }
