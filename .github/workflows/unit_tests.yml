@@ -46,24 +46,31 @@ jobs:
 
   semantic_release:
     name: Semantic Release
-    needs: build_and_test
+    # needs: build_and_test
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-        if: success() && github.ref == 'refs/heads/master'
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - run: cargo install semantic-release-rust --version 1.0.0-alpha.8
+        name: Install Semantic Release Rust
 
       - name: Setup Node for semantic release
         uses: actions/setup-node@v2
-        if: success()
         with:
           node-version: "14"
 
       - name: Install semantic release
-        if: success()
-        run: ./scripts/install-semantic-release.sh
+        run: npm install -g semantic-release @semantic-release/exec
+
+      - name: Debug
+        run: ls -alh .
 
       - name: Run semantic release
-        if: success()
         run: npx semantic-release --dry-run
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -71,10 +78,13 @@ jobs:
 
   build_image_and_publish:
     name: Build Docker Image
-    needs: build_and_test
+    # needs: build_and_test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
@@ -92,8 +102,10 @@ jobs:
           tagRegex: "noxious-(.*)"
           tagRegexGroup: 1
 
+      - name: Print Tag
+        run: echo "${{ steps.tagName.outputs.tag }}"
+
       - name: Build and push
-        if: success()
         uses: docker/build-push-action@v2
         with:
           context: .
