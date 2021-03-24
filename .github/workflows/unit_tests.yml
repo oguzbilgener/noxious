@@ -18,8 +18,8 @@ jobs:
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
-          version: '0.16.0'
-          args: '--ignore-tests -- --test-threads 1'
+          version: "0.16.0"
+          args: "--ignore-tests -- --test-threads 1"
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1.0.2
@@ -31,3 +31,63 @@ jobs:
         with:
           name: code-coverage-report
           path: cobertura.xml
+
+  semantic_release:
+    name: Semantic Release
+    needs: build_and_test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - if: success() && github.ref == 'refs/heads/master'
+
+      - name: Setup Node for semantic release
+        uses: actions/setup-node@v2
+        if: success()
+        with:
+          node-version: "14"
+
+      - name: Install semantic release
+        if: success()
+        run: ./scripts/install-semantic-release.sh
+
+      - name: Run semantic release
+        if: success()
+        run: npx semantic-release --dry-run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  build_image_and_publish:
+    name: Build Docker Image
+    needs: build_and_test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Checkout
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: olegtarasov/get-tag@v2.1
+        name: Get Tag Name
+        id: tagName
+        with:
+          tagRegex: "noxious-(.*)"
+          tagRegexGroup: 1
+
+      - name: Build and push
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          # Only push if this is a tagged build
+          push: ${{ success() && startsWith(github.ref, 'refs/tags/noxious') }}
+          tags: |
+            oguzbilgener/noxius:latest
+          # TODO: parse the version number from the tag?
