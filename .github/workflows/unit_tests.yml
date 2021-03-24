@@ -3,8 +3,20 @@ on: [push]
 name: Unit Tests
 
 jobs:
+  clippy_check:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - run: rustup component add clippy
+      - uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --all-features
+
   build_and_test:
     name: Test Noxious
+    needs: clippy_check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -38,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - if: success() && github.ref == 'refs/heads/master'
+        if: success() && github.ref == 'refs/heads/master'
 
       - name: Setup Node for semantic release
         uses: actions/setup-node@v2
@@ -63,7 +75,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Checkout
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
