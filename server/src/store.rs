@@ -175,7 +175,7 @@ impl Store {
     pub async fn update_proxy<L, R>(
         &self,
         proxy_name: &str,
-        new_config: ProxyConfig,
+        mut new_config: ProxyConfig,
     ) -> Result<ProxyWithToxics>
     where
         L: SocketListener + 'static,
@@ -183,6 +183,10 @@ impl Store {
     {
         let proxy_info = self.shared.remove_proxy(proxy_name).await?;
         let toxics = proxy_info.state.lock().toxics.clone();
+
+        if new_config.name.is_empty() {
+            new_config.name = proxy_info.config.name.clone();
+        }
 
         let shared_proxy_info = self.shared.create_proxy::<L, R>(new_config, toxics).await?;
         Ok(ProxyWithToxics::from_shared_proxy_info(shared_proxy_info))
@@ -713,13 +717,13 @@ pub mod tests {
 
         let result = store.get_proxies().await.unwrap();
         assert_eq!(3, result.len());
-        let foo = result.iter().find(|el| el.proxy.name == "foo").unwrap();
-        let bar = result.iter().find(|el| el.proxy.name == "bar").unwrap();
-        let baz = result.iter().find(|el| el.proxy.name == "baz").unwrap();
-        assert_eq!(1, foo.toxics.len());
-        assert_eq!("footox1", foo.toxics[0].get_name());
-        assert_eq!("bartox1", bar.toxics[0].get_name());
-        assert_eq!("baztox1", baz.toxics[0].get_name());
+        let p1 = result.iter().find(|el| el.proxy.name == "foo").unwrap();
+        let p2 = result.iter().find(|el| el.proxy.name == "bar").unwrap();
+        let p3 = result.iter().find(|el| el.proxy.name == "baz").unwrap();
+        assert_eq!(1, p1.toxics.len());
+        assert_eq!("footox1", p1.toxics[0].get_name());
+        assert_eq!("bartox1", p2.toxics[0].get_name());
+        assert_eq!("baztox1", p3.toxics[0].get_name());
     }
 
     #[tokio::test]

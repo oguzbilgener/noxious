@@ -28,6 +28,7 @@ const READ_BUFFER_SIZE: usize = 32768;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProxyConfig {
     /// An arbitrary name
+    #[serde(default = "default_name")]
     pub name: String,
     /// The host name and the port the proxy listens on, like 127.0.0.1:5431
     pub listen: String,
@@ -40,6 +41,10 @@ pub struct ProxyConfig {
     /// A random seed. Not exposed in the API
     #[serde(skip)]
     pub rand_seed: Option<u64>,
+}
+
+fn default_name() -> String {
+    "".to_owned()
 }
 
 fn default_enabled() -> bool {
