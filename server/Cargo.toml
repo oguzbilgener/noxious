@@ -1,6 +1,6 @@
 [package]
 name = "noxious-server"
-version = "1.0.0-rc.15"
+version = "1.0.0-rc.1"
 authors = ["Oguz Bilgener <oguz@bilgener.me>"]
 edition = "2018"
 publish = false
