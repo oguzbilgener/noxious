@@ -27,6 +27,7 @@ pub enum ToxicKind {
         /// Latency to be added, in milliseconds
         latency: u64,
         /// Jitter to be added to the latency, also in milliseconds
+        #[serde(default = "default_zero")]
         jitter: u64,
     },
     /// Stops any data from flowing through, and will close the connection after a timeout
@@ -53,8 +54,10 @@ pub enum ToxicKind {
         /// Average number of bytes to slice at
         average_size: u64,
         /// +/- bytes to vary sliced amounts. Must be less than the average size
+        #[serde(default = "default_zero")]
         size_variation: u64,
         /// Microseconds to delay each packet.
+        #[serde(default = "default_zero")]
         delay: u64,
     },
     /// Adds a limit of bytes transferred to the proxy session
@@ -116,6 +119,10 @@ fn default_toxicity() -> f32 {
 
 fn default_direction() -> StreamDirection {
     StreamDirection::Downstream
+}
+
+fn default_zero() -> u64 {
+    0
 }
 
 impl fmt::Display for StreamDirection {

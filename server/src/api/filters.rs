@@ -603,6 +603,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_create_latency_without_jitter() {
+        let _lock = MOCK_LOCK.lock().await;
+        let (stop, _stopper) = Stop::new();
+        let store = Store::new(stop, None);
+        let filter = make_filters(store.clone());
+        let _handle = mock_proxy_runner(store.clone());
+        insert_proxies(&store).await;
+
+        let expected = Toxic {
+            kind: ToxicKind::Latency {
+                latency: 25,
+                jitter: 0,
+            },
+            name: "stub".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Downstream,
+        };
+
+        // Create a toxic to make sure the response body of update includes the toxic too
+        let payload = "{\"name\": \"stub\",\"type\":\"latency\",\"attributes\":{\"latency\":25}}";
+        let req = warp::test::request()
+            .method("POST")
+            .path("/proxies/server1/toxics")
+            .header(CONTENT_TYPE, "application/json")
+            .body(&payload);
+        let reply = req.reply(&filter).await;
+        assert_eq!(StatusCode::OK, reply.status());
+        let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
+        assert_eq!(&expected, &body);
+    }
+
+    #[tokio::test]
     async fn test_get_toxic() {
         let _lock = MOCK_LOCK.lock().await;
         let (stop, _stopper) = Stop::new();

@@ -154,6 +154,9 @@ impl Store {
         L: SocketListener + 'static,
         R: Runner + 'static,
     {
+        if let Err(err) = config.validate() {
+            return Err(err.into());
+        }
         let shared_proxy_info = self
             .shared
             .create_proxy::<L, R>(config, Toxics::empty())
@@ -186,6 +189,10 @@ impl Store {
 
         if new_config.name.is_empty() {
             new_config.name = proxy_info.config.name.clone();
+        }
+
+        if let Err(err) = new_config.validate() {
+            return Err(err.into());
         }
 
         let shared_proxy_info = self.shared.create_proxy::<L, R>(new_config, toxics).await?;
@@ -255,7 +262,9 @@ impl Store {
         toxic_name: String,
         mut toxic: Toxic,
     ) -> Result<Toxic> {
-        toxic.set_default_name();
+        if toxic.name.is_empty() {
+            toxic.name = toxic_name
+        }
         let sender = self.shared.get_event_sender_for_proxy(&proxy_name)?;
 
         let result = sender
