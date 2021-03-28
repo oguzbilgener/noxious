@@ -9,7 +9,6 @@ documentation = "https://docs.rs/noxious"
 license = "MIT OR Apache-2.0"
 categories = ["network-programming", "development-tools"]
 keywords = ["proxy", "toxiproxy", "chaos", "tcp"]
-publish = false
 
 include = [
     "CHANGELOG.md",
