@@ -80,9 +80,6 @@ jobs:
       - name: Install semantic release
         run: npm install -g semantic-release @semantic-release/exec @semantic-release/git
 
-      - name: Debug
-        run: ls -alh .
-
       - name: Run semantic release
         id: semantic_release
         run: |
