@@ -82,9 +82,12 @@ jobs:
 
       - name: Run semantic release
         id: semantic_release
+        shell: bash
         run: |
           semantic-release
-          echo "::set-output name=tag::$(git --no-pager tag --points-at HEAD)"
+          TAG=$(git --no-pager tag --points-at HEAD)
+          echo "::set-output name=tag::$TAG"
+          echo "::set-output name=version::${TAG:1}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -114,4 +117,4 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           event-type: build-artifacts
-          client-payload: '{"tag": "${{ steps.semantic_release.outputs.tag }}"}'
+          client-payload: '{"tag": "${{ steps.semantic_release.outputs.tag }}", "version": "${{ steps.semantic_release.outputs.version }}" }'

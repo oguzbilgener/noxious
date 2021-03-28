@@ -44,7 +44,7 @@ jobs:
           push: true
           tags: |
             oguzbilgener/noxious:latest
-            oguzbilgener/noxious:${{ github.event.client_payload.tag }}
+            oguzbilgener/noxious:${{ github.event.client_payload.version }}
             ghcr.io/oguzbilgener/noxious:latest
-            ghcr.io/oguzbilgener/noxious:${{ github.event.client_payload.tag }}
+            ghcr.io/oguzbilgener/noxious:${{ github.event.client_payload.version }}
           # TODO: support tags for sub projects
