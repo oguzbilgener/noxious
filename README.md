@@ -6,24 +6,34 @@
 ![Crates.io](https://img.shields.io/crates/l/noxious)
 [![semantic-release](https://img.shields.io/badge/semantic--release-enabled-brightgreen?logo=semantic-release)](https://github.com/semantic-release/semantic-release)
 
-A Rust port of [Toxiproxy][toxiproxy] server, which is a TCP proxy to simulate network and system conditions for chaos and resiliency testing.
+A Rust port of [Toxiproxy] server, which is a TCP proxy to simulate network and system conditions for chaos and resiliency testing.
 
 Noxious is fully compatible with Toxiproxy with the same REST API, so you can use the Toxiproxy CLI and all the existing [client libraries][clients] for Toxiproxy with noxious.
 
 An async Rust client library called [noxious-client] is also available to interact with Noxious or Toxiproxy.
 
 
-[toxiproxy]: https://github.com/Shopify/toxiproxy
+[Toxiproxy]: https://github.com/Shopify/toxiproxy
 [clients]: https://github.com/Shopify/toxiproxy#clients
 [noxious-client]: https://docs.rs/noxious-client
 
 ### Quick Start
 
-By default the API server listens on port **8474**. This can be changed by providing the `--port` command line argument.
+Noxious server is available on [Docker Hub] for the amd64 architecture. You can also find the executable for linux/amd64 in the [Releases] page.
+
+Alternatively, you can build Noxious from source with [cargo]. Run the `cargo build --release` command and the executable will be available at `./target/release/noxious-server`.
+
+You can run `noxious-server --help` to get the list of arguments. By default the API server listens on port **8474**. This can be changed by providing the `--port` command line argument. You can also provide a JSON config file that declares an array of proxies to be created on startup with the `--config  ./path/to/file.json` argument.
+
+For an extensive guide on how to use the Toxiproxy clients, please visit the [Toxiproxy] GitHub repository.
+
+[Docker Hub]: https://hub.docker.com/repository/docker/oguzbilgener/noxious
+[Releases]: https://github.com/oguzbilgener/noxious/releases
+[cargo]: https://doc.rust-lang.org/book/ch01-01-installation.html#installation
 
 #### With Docker
 
-Noxious server is available on [Docker Hub]. When running in Docker, you will need to make sure that Noxious can reach the services that you are testing, and you can reach the ports that Noxious exposes for these services. You can use docker-compose, host networking or a bridge network, as described below.
+ When running in Docker, you will need to make sure that Noxious can reach the services that you are testing, and you can reach the ports that Noxious exposes for these services. You can use docker-compose, host networking or a bridge network, as described below.
 
 Suppose you have a web service running in the `myserver` container, connected to network `my-net`, listening on port `8000`:
 
@@ -78,8 +88,6 @@ curl --request POST \
 }'
 ```
 
-
-[Docker Hub]: https://hub.docker.com/repository/docker/oguzbilgener/noxious
 
 #### Populating Proxies
 
