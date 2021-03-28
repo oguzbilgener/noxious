@@ -4,6 +4,7 @@
 [![Unit Tests](https://github.com/oguzbilgener/noxious/actions/workflows/unit_tests.yml/badge.svg)](https://github.com/oguzbilgener/noxious/actions/workflows/unit_tests.yml)
 ![Codecov](https://img.shields.io/codecov/c/gh/oguzbilgener/noxious)
 ![Crates.io](https://img.shields.io/crates/l/noxious)
+[![semantic-release](https://img.shields.io/badge/semantic--release-enabled-brightgreen?logo=semantic-release)](https://github.com/semantic-release/semantic-release)
 
 A Rust port of [Toxiproxy][toxiproxy] server, which is a TCP proxy to simulate network and system conditions for chaos and resiliency testing.
 
@@ -35,7 +36,12 @@ You can start Noxious with a command like:
 
 
 ```sh
-docker run --name noxious --rm -p 8474:8474 -p 8001:8001 --network=my-net oguzbilgener/noxious
+docker run --name noxious \
+           --rm \
+           -p 8474:8474 \
+           -p 8001:8001 \
+           --network=my-net \
+           oguzbilgener/noxious
 ```
 
 You can create the proxy by using one of the [clients] or the toxiproxy-cli, or by using cURL:
@@ -45,7 +51,7 @@ curl --request POST \
   --url http://localhost:8474/proxies \
   --header 'Content-Type: application/json' \
   --data '{
-	"name": "myserver",
+	  "name": "myserver",
     "listen": "0.0.0.0:8001",
     "upstream": "myserver:8000",
     "enabled": true

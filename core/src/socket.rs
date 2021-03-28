@@ -170,3 +170,27 @@ impl AsyncWrite for WriteStream {
         self.project().inner.poll_shutdown(cx)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use tokio_test::assert_ok;
+
+    use super::*;
+
+    // Dummy test for coverage's sake
+    #[tokio::test]
+    async fn test_tcp_stream() {
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
+        tokio::spawn(async move {
+            let listener = TcpListener {
+                inner: TokioTcpListener::bind("127.0.0.1:9909").await.unwrap(),
+            };
+            let _ = ready_tx.send(());
+            let _ = listener.accept().await.unwrap();
+        });
+
+        assert_ok!(ready_rx.await);
+        let _stream = TcpStream::connect("127.0.0.1:9909").await.unwrap();
+        // let _ = stream.into_split();
+    }
+}

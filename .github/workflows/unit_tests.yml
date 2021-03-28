@@ -1,13 +1,13 @@
-on: [push]
+on: [push, pull_request]
 
-name: Unit Tests
+name: Test and Release
 
 jobs:
   clippy_check:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
       - run: rustup component add clippy
       - uses: actions-rs/clippy-check@v1
         with:
@@ -16,14 +16,22 @@ jobs:
 
   build_and_test:
     name: Test Noxious
-    needs: clippy_check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-      - uses: actions-rs/cargo@v1
+      - name: Cargo cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build release
+        uses: actions-rs/cargo@v1
         with:
           command: build
           args: --release --all-features
@@ -46,8 +54,8 @@ jobs:
 
   semantic_release:
     name: Semantic Release
-    # needs: build_and_test
-    if: github.ref == 'refs/heads/main'
+    needs: build_and_test
+    if: github.ref == 'refs/heads/rc' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -55,9 +63,14 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-
-      - run: cargo install semantic-release-rust --version 1.0.0-alpha.8
-        name: Install Semantic Release Rust
+      - name: Cargo cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Setup Node for semantic release
         uses: actions/setup-node@v2
@@ -65,53 +78,43 @@ jobs:
           node-version: "14"
 
       - name: Install semantic release
-        run: npm install -g semantic-release @semantic-release/exec
+        run: npm install -g semantic-release @semantic-release/exec @semantic-release/git
 
       - name: Debug
         run: ls -alh .
 
       - name: Run semantic release
-        run: npx semantic-release --dry-run
+        id: semantic_release
+        run: |
+          semantic-release
+          echo "::set-output name=tag::$(git --no-pager tag --points-at HEAD)"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-  build_image_and_publish:
-    name: Build Docker Image
-    # needs: build_and_test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v1
+      - name: Upload executable
+        uses: actions/upload-artifact@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          name: noxious-server-${{ runner.os }}-${{ github.sha }}
+          path: ./target/release/noxious-server
+          retention-days: 1
 
-      - uses: olegtarasov/get-tag@v2.1
-        name: Get Tag Name
-        id: tagName
+      # TODO: remove this from here and move it to the build artifacts workflow
+      # So that we are sure that the version numbers are updated in the binary
+      - name: Upload executable to release
+        uses: svenstaro/upload-release-action@v1-release
+        if: steps.semantic_release.outputs.tag != ''
         with:
-          tagRegex: "noxious-(.*)"
-          tagRegexGroup: 1
+          repo_token: ${{ secrets.PAT }}
+          file: ./target/release/noxious-server
+          asset_name: noxious-server-${{ steps.semantic_release.outputs.tag }}-linux-amd64
+          tag: ${{ steps.semantic_release.outputs.tag }}
+          overwrite: true
 
-      - name: Print Tag
-        run: echo "${{ steps.tagName.outputs.tag }}"
-
-      - name: Build and push
-        uses: docker/build-push-action@v2
+      - name: Dispatch Build Image
+        uses: peter-evans/repository-dispatch@v1
+        if: steps.semantic_release.outputs.tag != ''
         with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          # Only push if this is a tagged build
-          push: ${{ startsWith(github.ref, 'refs/tags/noxious') }}
-          tags: |
-            oguzbilgener/noxius:latest
-          # TODO: parse the version number from the tag?
+          token: ${{ secrets.PAT }}
+          event-type: build-artifacts
+          client-payload: '{"tag": "${{ steps.semantic_release.outputs.tag }}"}'

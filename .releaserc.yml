@@ -1,10 +1,20 @@
 branches:
-  - main
+  - name: main
+  - name: rc
+    prerelease: true
 plugins:
-    - '@semantic-release/commit-analyzer'
-    - '@semantic-release/release-notes-generator'
-    - '@semantic-release/github'
-    - - '@semantic-release/exec'
-      - verifyConditionsCmd: "semantic-release-rust verify-conditions"
-        prepareCmd: "semantic-release-rust prepare ${nextRelease.version}"
-        publishCmd: "semantic-release-rust publish"
+  - "@semantic-release/commit-analyzer"
+  - "@semantic-release/release-notes-generator"
+  - - "@semantic-release/exec"
+    - prepareCmd: "./scripts/bin/set-cargo-version ./server/Cargo.toml ${nextRelease.version} && cargo build --release --all-features"
+  - - "@semantic-release/git"
+    - assets:
+      - server/Cargo.toml
+      - core/Cargo.toml
+      - client/Cargo.toml
+      - Cargo.lock
+  - "@semantic-release/github"
+  - - "@semantic-release/exec"
+    - verifyConditionsCmd: "./scripts/bin/semantic-release-rust verify-conditions"
+      prepareCmd: "./scripts/bin/semantic-release-rust prepare ${nextRelease.version}"
+      publishCmd: "./scripts/bin/semantic-release-rust publish"

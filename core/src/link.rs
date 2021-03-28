@@ -307,7 +307,7 @@ pub(crate) struct ToxicRunner {
 impl ToxicRunner {
     pub fn new((toxic, threshold): (Toxic, f32)) -> Self {
         ToxicRunner {
-            active: toxic.toxicity > threshold,
+            active: toxic.toxicity >= threshold,
             toxic,
             closer: None,
             override_stop: None,
@@ -388,5 +388,138 @@ impl ToxicRunner {
             let _ = closer.close();
         }
         return result;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use futures::SinkExt;
+    use tokio_test::{assert_err, assert_ok};
+
+    use super::*;
+
+    #[test]
+    fn toxic_runner_take_override_stop() {
+        let toxic = Toxic {
+            name: "nop".to_owned(),
+            kind: ToxicKind::Noop,
+            direction: StreamDirection::Upstream,
+            toxicity: 1.0,
+        };
+        let mut runner = ToxicRunner::new((toxic, 0.9));
+        let (stop, stopper) = Stop::new();
+        runner.set_override_stop(stop);
+        let _stop = runner.take_override_stop();
+        stopper.stop();
+    }
+
+    #[tokio::test]
+    async fn run_slicer() {
+        let slicer = Toxic {
+            name: "slicer slices".to_owned(),
+            kind: ToxicKind::Slicer {
+                average_size: 4,
+                size_variation: 0,
+                delay: 0,
+            },
+            direction: StreamDirection::Upstream,
+            toxicity: 1.0,
+        };
+
+        let mut runner = ToxicRunner::new((slicer, 1.0));
+        let (mut tx, rx) = futures::channel::mpsc::channel::<Bytes>(1);
+        let (tx2, mut rx2) = futures::channel::mpsc::channel::<Bytes>(1);
+        assert_ok!(tx.send("chop chop".into()).await);
+        let handle = tokio::spawn(async move {
+            let res = runner.run(rx, tx2, None, None).await;
+            assert_ok!(res);
+        });
+        assert_eq!(Some("chop".into()), rx2.next().await);
+        assert_eq!(Some(" cho".into()), rx2.next().await);
+        assert_eq!(Some("p".into()), rx2.next().await);
+        drop(tx);
+        assert_eq!(None, rx2.next().await);
+        assert_ok!(handle.await);
+    }
+
+    #[tokio::test]
+    async fn run_slicer_recv_drop() {
+        let slicer = Toxic {
+            name: "slicer slices".to_owned(),
+            kind: ToxicKind::Slicer {
+                average_size: 4,
+                size_variation: 0,
+                delay: 0,
+            },
+            direction: StreamDirection::Upstream,
+            toxicity: 1.0,
+        };
+
+        let mut runner = ToxicRunner::new((slicer, 1.0));
+        let (mut tx, rx) = futures::channel::mpsc::channel::<Bytes>(1);
+        let (tx2, mut rx2) = futures::channel::mpsc::channel::<Bytes>(1);
+        assert_ok!(tx.send("chop chop".into()).await);
+        let handle = tokio::spawn(async move {
+            let res = runner.run(rx, tx2, None, None).await;
+            assert_err!(&res);
+            assert_eq!(std::io::ErrorKind::ConnectionReset, res.unwrap_err().kind());
+        });
+        assert_eq!(Some("chop".into()), rx2.next().await);
+        assert_eq!(Some(" cho".into()), rx2.next().await);
+        drop(rx2);
+        assert_ok!(handle.await);
+    }
+
+    #[tokio::test]
+    async fn run_inactive() {
+        let slicer = Toxic {
+            name: "slicer slices".to_owned(),
+            kind: ToxicKind::Slicer {
+                average_size: 4,
+                size_variation: 0,
+                delay: 0,
+            },
+            direction: StreamDirection::Upstream,
+            toxicity: 0.3,
+        };
+
+        let mut runner = ToxicRunner::new((slicer, 0.9));
+        let (mut tx, rx) = futures::channel::mpsc::channel::<Bytes>(1);
+        let (tx2, mut rx2) = futures::channel::mpsc::channel::<Bytes>(1);
+        assert_ok!(tx.send("chop chop".into()).await);
+        let handle = tokio::spawn(async move {
+            let res = runner.run(rx, tx2, None, None).await;
+            assert_ok!(res);
+        });
+        assert_eq!(Some("chop chop".into()), rx2.next().await);
+        drop(tx);
+        assert_eq!(None, rx2.next().await);
+        assert_ok!(handle.await);
+    }
+
+    #[tokio::test]
+    async fn run_with_closer() {
+        let slicer = Toxic {
+            name: "slicer slices".to_owned(),
+            kind: ToxicKind::Bandwidth { rate: 48000 },
+            direction: StreamDirection::Upstream,
+            toxicity: 0.3,
+        };
+
+        let mut runner = ToxicRunner::new((slicer, 0.9));
+        let (close, closer) = Close::new();
+        runner.set_closer(closer);
+        let (mut tx, rx) = futures::channel::mpsc::channel::<Bytes>(1);
+        let (tx2, mut rx2) = futures::channel::mpsc::channel::<Bytes>(1);
+        assert_ok!(tx.send("chop chop".into()).await);
+        let handle = tokio::spawn(async move {
+            let res = runner.run(rx, tx2, None, None).await;
+            assert_ok!(res);
+        });
+        assert_eq!(Some("chop chop".into()), rx2.next().await);
+        drop(tx);
+        assert_eq!(None, rx2.next().await);
+        assert_ok!(handle.await);
+        assert_ok!(close.recv().await);
     }
 }

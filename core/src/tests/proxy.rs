@@ -1,8 +1,11 @@
-use crate::proxy::{ProxyConfig, ProxyRunner, Runner, Toxics};
 use crate::signal::{Close, Stop};
 use crate::socket::{ReadStream, WriteStream};
 use crate::tests::socket_mocks::*;
 use crate::toxic::{StreamDirection, Toxic, ToxicKind};
+use crate::{
+    link::Link,
+    proxy::{ProxyConfig, ProxyRunner, Runner, Toxics},
+};
 use lazy_static::lazy_static;
 use mockall::predicate;
 use std::{
@@ -12,6 +15,7 @@ use std::{
 };
 use tokio::sync::Mutex as AsyncMutex;
 use tokio_test::{assert_err, assert_ok, io as test_io};
+use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 
 lazy_static! {
     static ref MOCK_LOCK: AsyncMutex<()> = AsyncMutex::new(());
@@ -248,4 +252,32 @@ async fn run_proxy_with_slicer() {
     assert_ok!(handle.await);
     stopper.stop();
     let _ = close.recv().await;
+}
+
+#[tokio::test]
+async fn test_link_disband() {
+    let (read, _handle_read) = test_io::Builder::new().build_with_handle();
+    let (write, _handle_write) = test_io::Builder::new().build_with_handle();
+    let read = ReadStream::new(read);
+    let write = WriteStream::new(write);
+    let read = FramedRead::with_capacity(read, BytesCodec::new(), 1024);
+    let write = FramedWrite::new(write, BytesCodec::new());
+
+    let (stop, stopper) = Stop::new();
+    let listen = "127.0.0.1:5431";
+    let upstream = "127.0.0.1:5432";
+    let config = ProxyConfig {
+        name: "foo".to_owned(),
+        listen: listen.to_owned(),
+        upstream: upstream.to_owned(),
+        enabled: true,
+        rand_seed: None,
+    };
+
+    let addr: SocketAddr = SocketAddr::from(([127, 0, 0, 1], 29991));
+    let mut link = Link::new(addr, StreamDirection::Upstream, config, stop);
+    link.establish(read, write, Vec::new(), None);
+    stopper.stop();
+    let res = link.disband().await;
+    assert_ok!(res);
 }

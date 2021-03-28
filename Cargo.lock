@@ -1003,7 +1003,7 @@ dependencies = [
 
 [[package]]
 name = "noxious-server"
-version = "0.1.0"
+version = "1.0.0-rc.15"
 dependencies = [
  "async-trait",
  "bmrng",

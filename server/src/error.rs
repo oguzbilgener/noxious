@@ -110,3 +110,45 @@ impl From<ApiErrorResponse> for Response {
         with_status(json_reply(&resp), resp.code).into_response()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proxy_validate_error_into_store_error() {
+        let err: StoreError = ProxyValidateError::MissingName.into();
+        assert_eq!(
+            StoreError::InvalidProxyConfig(ProxyValidateError::MissingName),
+            err
+        );
+    }
+
+    #[test]
+    fn toxic_update_error_into_store_error() {
+        let err: StoreError = ToxicUpdateError::NotFound.into();
+        assert_eq!(StoreError::NotFound(ResourceKind::Toxic), err);
+
+        let err: StoreError = ToxicUpdateError::Other.into();
+        assert_eq!(StoreError::Other, err);
+    }
+
+    #[test]
+    fn io_error_into_store_error() {
+        let err: StoreError = io::Error::new(io::ErrorKind::AddrInUse, ":(").into();
+        assert_eq!(StoreError::IoError(io::ErrorKind::AddrInUse), err);
+    }
+
+    #[test]
+    fn other_server_error_into_status_code() {
+        let code: StatusCode = StoreError::Other.into();
+        assert_eq!(StatusCode::INTERNAL_SERVER_ERROR, code);
+
+        let code: StatusCode = StoreError::ProxyClosed.into();
+        assert_eq!(StatusCode::INTERNAL_SERVER_ERROR, code);
+
+        let err: StoreError = io::Error::new(io::ErrorKind::AddrInUse, ":(").into();
+        let code: StatusCode = err.into();
+        assert_eq!(StatusCode::INTERNAL_SERVER_ERROR, code);
+    }
+}

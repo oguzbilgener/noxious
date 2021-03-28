@@ -21,3 +21,14 @@ impl From<NotFoundError> for ToxicUpdateError {
         ToxicUpdateError::NotFound
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_not_found() {
+        let input = NotFoundError;
+        let _err: ToxicUpdateError = input.into();
+    }
+}

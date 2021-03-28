@@ -124,6 +124,65 @@ impl ToxicStateHolder {
         toxic_name: &str,
     ) -> Option<Arc<AsyncMutex<ToxicState>>> {
         let inner = self.inner.lock().expect("ToxicStateHolder lock poisoned");
-        inner.get(toxic_name).map(|toxic| Arc::clone(toxic))
+        inner
+            .get(toxic_name)
+            .map(|toxic_state| Arc::clone(toxic_state))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::toxic::StreamDirection;
+
+    #[tokio::test]
+    async fn initializes_toxic_state_for_limit_data() {
+        let toxics = Toxics {
+            upstream: Vec::new(),
+            downstream: vec![Toxic {
+                kind: ToxicKind::LimitData { bytes: 50000 },
+                name: "limiter".to_owned(),
+                toxicity: 0.5,
+                direction: StreamDirection::Downstream,
+            }],
+        };
+        let holder = ToxicStateHolder::for_toxics(&toxics);
+        assert_eq!(true, holder.is_some());
+        assert_eq!(
+            true,
+            holder
+                .clone()
+                .unwrap()
+                .get_state_for_toxic("wrong")
+                .is_none()
+        );
+        let state = holder.unwrap().get_state_for_toxic("limiter");
+        assert_eq!(true, state.is_some());
+        let state = state.unwrap();
+        let data = state.lock().await;
+        assert_eq!(
+            *data,
+            ToxicState::LimitData {
+                bytes_transmitted: 0
+            }
+        );
+    }
+
+    #[test]
+    fn initializes_no_toxic_state_for_latency() {
+        let toxics = Toxics {
+            upstream: Vec::new(),
+            downstream: vec![Toxic {
+                kind: ToxicKind::Latency {
+                    latency: 40,
+                    jitter: 0,
+                },
+                name: "lat".to_owned(),
+                toxicity: 0.5,
+                direction: StreamDirection::Downstream,
+            }],
+        };
+        let holder = ToxicStateHolder::for_toxics(&toxics);
+        assert_eq!(true, holder.is_none());
     }
 }
