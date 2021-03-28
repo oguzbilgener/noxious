@@ -195,7 +195,8 @@ impl Store {
     }
 
     #[instrument(level = "trace", skip(self))]
-    pub async fn create_toxic(&self, proxy_name: String, toxic: Toxic) -> Result<Toxic> {
+    pub async fn create_toxic(&self, proxy_name: String, mut toxic: Toxic) -> Result<Toxic> {
+        toxic.set_default_name();
         let sender = self.shared.get_event_sender_for_proxy(&proxy_name)?;
 
         let result = sender
@@ -248,8 +249,9 @@ impl Store {
         &self,
         proxy_name: String,
         toxic_name: String,
-        toxic: Toxic,
+        mut toxic: Toxic,
     ) -> Result<Toxic> {
+        toxic.set_default_name();
         let sender = self.shared.get_event_sender_for_proxy(&proxy_name)?;
 
         let result = sender

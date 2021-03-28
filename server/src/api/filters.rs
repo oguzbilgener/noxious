@@ -634,7 +634,7 @@ mod tests {
         let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
         assert_eq!(&toxic, &body);
 
-        let payload = serde_json::to_vec(&toxic).unwrap();
+        let payload = serde_json::to_vec(&updated_toxic).unwrap();
         let req = warp::test::request()
             .method("POST")
             .path("/proxies/server1/toxics/stub")

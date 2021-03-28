@@ -66,16 +66,18 @@ pub enum ToxicKind {
 }
 
 /// Something that can be attached to a link to modify the way the data is passed through
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Toxic {
     #[serde(flatten)]
     /// The kind which also contains kind-specific attributes
     pub kind: ToxicKind,
     /// The unique name for this toxic
+    #[serde(default = "default_name")]
     pub name: String,
     /// The probability of this toxic being active
+    #[serde(default = "default_toxicity")]
     pub toxicity: f32,
-    #[serde(alias = "stream")]
+    #[serde(alias = "stream", default = "default_direction")]
     /// The direction this toxic is install on
     pub direction: StreamDirection,
 }
@@ -105,6 +107,17 @@ pub struct ToxicEvent {
 /// The result return after the toxic event is processed. May return Ok or ToxicUpdateError
 pub type ToxicEventResult = Result<(), ToxicUpdateError>;
 
+fn default_name() -> String {
+    "".to_owned()
+}
+fn default_toxicity() -> f32 {
+    1.0
+}
+
+fn default_direction() -> StreamDirection {
+    StreamDirection::Downstream
+}
+
 impl fmt::Display for StreamDirection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -114,16 +127,18 @@ impl fmt::Display for StreamDirection {
     }
 }
 
-impl PartialEq for Toxic {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-    }
-}
-
 impl Toxic {
     /// Get the toxic name
     pub fn get_name(&self) -> &str {
         &self.name
+    }
+
+    /// Sets a name to this Toxic if the name is an empty string.
+    /// The default name format is {type}_{direction}
+    pub fn set_default_name(&mut self) {
+        if self.name.is_empty() {
+            self.name = format!("{}_{}", self.kind.get_name(), self.direction);
+        }
     }
 }
 
@@ -150,6 +165,19 @@ impl ToxicKind {
         match self {
             ToxicKind::Latency { .. } => 1024,
             _ => 1,
+        }
+    }
+
+    /// Returns the URL-safe name for the toxic kind
+    pub fn get_name(&self) -> &'static str {
+        match self {
+            ToxicKind::Noop => "noop",
+            ToxicKind::Latency { .. } => "latency",
+            ToxicKind::Timeout { .. } => "timeout",
+            ToxicKind::Bandwidth { .. } => "bandwidth",
+            ToxicKind::SlowClose { .. } => "slow_close",
+            ToxicKind::Slicer { .. } => "slicer",
+            ToxicKind::LimitData { .. } => "limit_data",
         }
     }
 }
@@ -347,6 +375,34 @@ mod tests {
     }
 
     #[test]
+    fn test_noop_ser_without_toxicity() {
+        let input = "{\"type\":\"noop\",\"name\":\"foo\",\"direction\":\"upstream\"}";
+        let expected = Toxic {
+            kind: ToxicKind::Noop,
+            name: "foo".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Upstream,
+        };
+
+        let deserialized = from_str(&input).unwrap();
+        assert_eq!(expected, deserialized);
+    }
+
+    #[test]
+    fn test_noop_ser_without_direction() {
+        let input = "{\"type\":\"noop\",\"name\":\"foo\",\"toxicity\":0.55}";
+        let expected = Toxic {
+            kind: ToxicKind::Noop,
+            name: "foo".to_owned(),
+            toxicity: 0.55,
+            direction: StreamDirection::Downstream,
+        };
+
+        let deserialized = from_str(&input).unwrap();
+        assert_eq!(expected, deserialized);
+    }
+
+    #[test]
     fn test_latency_serde() {
         let toxic = Toxic {
             kind: ToxicKind::Latency {
@@ -394,5 +450,124 @@ mod tests {
             "invalid value: integer `-21`, expected u64 at line 1 column 109",
             deserialized_err.unwrap_err().to_string()
         );
+    }
+
+    #[test]
+    fn test_noop_de_without_name() {
+        let input = "{\"type\":\"noop\"}";
+        let expected = Toxic {
+            kind: ToxicKind::Noop,
+            name: "noop_downstream".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Downstream,
+        };
+
+        let mut deserialized: Toxic = from_str(&input).unwrap();
+        assert_eq!("", &deserialized.name);
+        deserialized.set_default_name();
+        assert_eq!(expected, deserialized);
+    }
+
+    #[test]
+    fn test_latency_de_without_name() {
+        let input = "{\"type\":\"latency\",\"attributes\":{\"latency\":4321,\"jitter\":5}}";
+        let expected = Toxic {
+            kind: ToxicKind::Latency {
+                latency: 4321,
+                jitter: 5,
+            },
+            name: "latency_downstream".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Downstream,
+        };
+
+        let mut deserialized: Toxic = from_str(&input).unwrap();
+        assert_eq!("", &deserialized.name);
+        deserialized.set_default_name();
+        assert_eq!(expected, deserialized);
+    }
+
+    #[test]
+    fn test_timeout_de_without_name() {
+        let input = "{\"type\":\"timeout\",\"attributes\":{\"timeout\":2000}}";
+        let expected = Toxic {
+            kind: ToxicKind::Timeout { timeout: 2000 },
+            name: "timeout_downstream".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Downstream,
+        };
+
+        let mut deserialized: Toxic = from_str(&input).unwrap();
+        assert_eq!("", &deserialized.name);
+        deserialized.set_default_name();
+        assert_eq!(expected, deserialized);
+    }
+
+    #[test]
+    fn test_bandwidth_de_without_name() {
+        let input = "{\"type\":\"bandwidth\",\"attributes\":{\"rate\":500}}";
+        let expected = Toxic {
+            kind: ToxicKind::Bandwidth { rate: 500 },
+            name: "bandwidth_downstream".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Downstream,
+        };
+
+        let mut deserialized: Toxic = from_str(&input).unwrap();
+        assert_eq!("", &deserialized.name);
+        deserialized.set_default_name();
+        assert_eq!(expected, deserialized);
+    }
+
+    #[test]
+    fn test_slow_close_de_without_name() {
+        let input = "{\"type\":\"slow_close\",\"attributes\":{\"delay\":3000}}";
+        let expected = Toxic {
+            kind: ToxicKind::SlowClose { delay: 3000 },
+            name: "slow_close_downstream".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Downstream,
+        };
+
+        let mut deserialized: Toxic = from_str(&input).unwrap();
+        assert_eq!("", &deserialized.name);
+        deserialized.set_default_name();
+        assert_eq!(expected, deserialized);
+    }
+
+    #[test]
+    fn test_slicer_de_without_name() {
+        let input = "{\"type\":\"slicer\",\"attributes\":{\"average_size\":100,\"size_variation\": 9,\"delay\": 50}}";
+        let expected = Toxic {
+            kind: ToxicKind::Slicer {
+                average_size: 100,
+                size_variation: 9,
+                delay: 50,
+            },
+            name: "slicer_downstream".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Downstream,
+        };
+
+        let mut deserialized: Toxic = from_str(&input).unwrap();
+        assert_eq!("", &deserialized.name);
+        deserialized.set_default_name();
+        assert_eq!(expected, deserialized);
+    }
+
+    #[test]
+    fn test_limit_data_de_without_name() {
+        let input = "{\"type\":\"limit_data\",\"attributes\":{\"bytes\":1024}}";
+        let expected = Toxic {
+            kind: ToxicKind::LimitData { bytes: 1024 },
+            name: "limit_data_downstream".to_owned(),
+            toxicity: 1.0,
+            direction: StreamDirection::Downstream,
+        };
+
+        let mut deserialized: Toxic = from_str(&input).unwrap();
+        assert_eq!("", &deserialized.name);
+        deserialized.set_default_name();
+        assert_eq!(expected, deserialized);
     }
 }
