@@ -17,7 +17,7 @@ Also check out [ARCHITECTURE.md] for implementation details.
 [Toxiproxy]: https://github.com/Shopify/toxiproxy
 [clients]: https://github.com/Shopify/toxiproxy#clients
 [noxious-client]: https://docs.rs/noxious-client
-[ARCHITECTURE.md]: [ARCHITECTURE.md]
+[ARCHITECTURE.md]: [https://github.com/oguzbilgener/noxious/blob/main/ARCHITECTURE.md]
 
 ### Quick Start
 
