@@ -19,7 +19,7 @@ An async Rust client library called [noxious-client] is also available to intera
 
 ### Quick Start
 
-Noxious server is available on [Docker Hub] for the amd64 architecture. You can also find the executable for linux/amd64 in the [Releases] page.
+Noxious server is available on [Docker Hub] and [GitHub Packages] for AMD64 and ARM. You can also find the executables for linux/amd64 in the [Releases] page.
 
 Alternatively, you can build Noxious from source with [cargo]. Run the `cargo build --release` command and the executable will be available at `./target/release/noxious-server`.
 
@@ -28,6 +28,7 @@ You can run `noxious-server --help` to get the list of arguments. By default the
 For an extensive guide on how to use the Toxiproxy clients, please visit the [Toxiproxy] GitHub repository.
 
 [Docker Hub]: https://hub.docker.com/repository/docker/oguzbilgener/noxious
+[GitHub Packages]: https://github.com/users/oguzbilgener/packages/container/package/noxious
 [Releases]: https://github.com/oguzbilgener/noxious/releases
 [cargo]: https://doc.rust-lang.org/book/ch01-01-installation.html#installation
 
