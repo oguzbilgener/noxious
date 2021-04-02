@@ -12,10 +12,12 @@ Noxious is fully compatible with Toxiproxy with the same REST API, so you can us
 
 An async Rust client library called [noxious-client] is also available to interact with Noxious or Toxiproxy.
 
+Also check out [ARCHITECTURE.md] for implementation details.
 
 [Toxiproxy]: https://github.com/Shopify/toxiproxy
 [clients]: https://github.com/Shopify/toxiproxy#clients
 [noxious-client]: https://docs.rs/noxious-client
+[ARCHITECTURE.md]: [ARCHITECTURE.md]
 
 ### Quick Start
 
@@ -23,7 +25,7 @@ Noxious server is available on [Docker Hub] and [GitHub Packages] for AMD64 and 
 
 Alternatively, you can build Noxious from source with [cargo]. Run the `cargo build --release` command and the executable will be available at `./target/release/noxious-server`.
 
-You can run `noxious-server --help` to get the list of arguments. By default the API server listens on port **8474**. This can be changed by providing the `--port` command line argument. You can also provide a JSON config file that declares an array of proxies to be created on startup with the `--config  ./path/to/file.json` argument.
+You can run `noxious-server --help` to get the list of arguments. By default the API server listens on port **8474**. This can be changed by providing the `--port` command line argument. You can provide a JSON config file that declares an array of proxies to be created on startup with the `--config  ./path/to/file.json` argument.
 
 For an extensive guide on how to use the Toxiproxy clients, please visit the [Toxiproxy] GitHub repository.
 
@@ -62,7 +64,7 @@ curl --request POST \
   --url http://localhost:8474/proxies \
   --header 'Content-Type: application/json' \
   --data '{
-	  "name": "myserver",
+    "name": "myserver",
     "listen": "0.0.0.0:8001",
     "upstream": "myserver:8000",
     "enabled": true
@@ -92,7 +94,7 @@ curl --request POST \
 
 #### Populating Proxies
 
-You can also start noxious-server with `--config` to provide the path to a JSON file that contains a list of initial proxies. Alternatively, you can use the CLI or the REST API to create proxies:
+In addition to the initial JSON config, you can use the CLI or the REST API clients to create proxies:
 
 ```sh
 toxiproxy-cli create test_redis -l localhost:26379 -u localhost:6379
