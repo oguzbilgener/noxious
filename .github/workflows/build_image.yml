@@ -22,7 +22,7 @@ jobs:
             suffix: armv7
             platform: linux/arm/v7
             dockerfile: Dockerfile.armv7
-    name: "${{ matrix.label }}: Build and Publish Docker Images"
+    name: "${{ matrix.label }}: Build and Publish Docker Image"
     if: github.event.client_payload.tag != ''
     runs-on: ubuntu-latest
     steps:
@@ -68,6 +68,12 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v1
         with:
@@ -87,12 +93,22 @@ jobs:
 
       - name: Push Multi-Arch Manifest
         run: |
-          ./manifest-tool push \
+          ./manifest-tool push from-args \
             --platforms linux/amd64,linux/arm64,linux/arm/v7 \
             --template oguzbilgener/noxious:latest-ARCHVARIANT \
             --target oguzbilgener/noxious:latest
 
-          ./manifest-tool push \
+          ./manifest-tool push from-args \
             --platforms linux/amd64,linux/arm64,linux/arm/v7 \
             --template oguzbilgener/noxious:${{ github.event.client_payload.version }}-ARCHVARIANT \
             --target oguzbilgener/noxious:${{ github.event.client_payload.version }}
+
+          ./manifest-tool push from-args \
+            --platforms linux/amd64,linux/arm64,linux/arm/v7 \
+            --template ghcr.io/oguzbilgener/noxious:latest-ARCHVARIANT \
+            --target ghcr.io/oguzbilgener/noxious:latest
+
+          ./manifest-tool push from-args \
+            --platforms linux/amd64,linux/arm64,linux/arm/v7 \
+            --template ghcr.io/oguzbilgener/noxious:${{ github.event.client_payload.version }}-ARCHVARIANT \
+            --target ghcr.io/oguzbilgener/noxious:${{ github.event.client_payload.version }}
