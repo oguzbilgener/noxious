@@ -15,4 +15,7 @@ toxiproxy.json
 perf.data
 perf.data.old
 
+
 tarpaulin-report.html
+cobertura.xml
+lcov.info

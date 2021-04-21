@@ -2,7 +2,7 @@
 
 ![Docker Image Version (latest by date)](https://img.shields.io/docker/v/oguzbilgener/noxious)
 [![Unit Tests](https://github.com/oguzbilgener/noxious/actions/workflows/unit_tests.yml/badge.svg)](https://github.com/oguzbilgener/noxious/actions/workflows/unit_tests.yml)
-![Codecov](https://img.shields.io/codecov/c/gh/oguzbilgener/noxious)
+[![Coverage Status](https://coveralls.io/repos/github/oguzbilgener/noxious/badge.svg?branch=main)](https://coveralls.io/github/oguzbilgener/noxious?branch=main)
 ![Crates.io](https://img.shields.io/crates/l/noxious)
 [![semantic-release](https://img.shields.io/badge/semantic--release-enabled-brightgreen?logo=semantic-release)](https://github.com/semantic-release/semantic-release)
 

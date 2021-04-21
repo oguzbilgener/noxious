@@ -39,12 +39,13 @@ jobs:
         uses: actions-rs/tarpaulin@v0.1
         with:
           version: "0.16.0"
-          args: "--ignore-tests -- --test-threads 1"
+          args: "--ignore-tests --out Lcov -- --test-threads 1"
 
-      - name: Upload to codecov.io
-        uses: codecov/codecov-action@v1.0.2
+      - name: Coveralls
+        uses: coverallsapp/github-action@master
         with:
-          token: ${{secrets.CODECOV_TOKEN}}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path-to-lcov: './lcov.info'
 
       - name: Archive code coverage results
         uses: actions/upload-artifact@v1

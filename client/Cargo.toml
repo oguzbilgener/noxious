@@ -22,7 +22,6 @@ include = [
 ]
 
 [badges]
-codecov = { repository = "oguzbilgener/noxious", branch = "main", service = "github" }
 maintenance = { status = "actively-developed" }
 
 [dependencies]
