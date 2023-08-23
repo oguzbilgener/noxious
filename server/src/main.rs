@@ -1,5 +1,5 @@
 use crate::args::Args;
-use clap::Clap;
+use clap::Parser;
 use noxious::{proxy::ProxyRunner, signal::Stop, socket::TcpListener};
 use std::net::SocketAddr;
 use tokio::signal;

@@ -1,8 +1,8 @@
-use clap::Clap;
+use clap::Parser;
 use std::net::{IpAddr, Ipv4Addr};
 
 /// A Rust port of Toxiproxy server
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 pub struct Args {
     /// The host to listen on for the API server
     #[clap(short, long, default_value = "127.0.0.1")]
