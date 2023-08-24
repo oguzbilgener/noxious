@@ -13,10 +13,9 @@ use futures::{stream, StreamExt};
 #[cfg(test)]
 use mockall::automock;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::{io, mem};
 use thiserror::Error;
 use tokio_util::codec::{BytesCodec, FramedRead, FramedWrite};
 use tracing::{debug, error, info, instrument};
@@ -306,7 +305,7 @@ fn create_links(
             io::ErrorKind::AlreadyExists,
             format!(
                 "State error: there is already a client connected with this address: {}",
-                addr.to_string()
+                addr
             ),
         ));
     }
@@ -415,7 +414,7 @@ async fn process_toxic_event(
 
     let old_map = {
         let mut current_state = state.lock();
-        mem::replace(&mut current_state.clients, HashMap::new())
+        std::mem::take(&mut current_state.clients)
     };
 
     let mut clients = stream::iter(old_map);
@@ -527,7 +526,7 @@ mod serde_tests {
         };
         let input =
             "{\"name\":\"foo\",\"listen\":\"127.0.0.1:5431\",\"upstream\":\"127.0.0.1:5432\"}";
-        let deserialized = from_str(&input).unwrap();
+        let deserialized = from_str(input).unwrap();
         assert_eq!(expected, deserialized);
     }
 }

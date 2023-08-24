@@ -172,7 +172,7 @@ impl Link {
         &self,
         reader: Read,
         writer: Write,
-        mut toxic_runners: &mut [ToxicRunner],
+        toxic_runners: &mut [ToxicRunner],
         stop: &mut Stop,
         left_end_tx: futures_mpsc::Sender<Bytes>,
         right_end_rx: futures_mpsc::Receiver<Bytes>,
@@ -184,7 +184,7 @@ impl Link {
         let toxic_override_stopper_clone = toxic_override_stopper.clone();
 
         let wait_for_manual_close: Option<Close> =
-            self.prepare_manual_close_signals(&mut toxic_runners, override_stop_toxics);
+            self.prepare_manual_close_signals(toxic_runners, override_stop_toxics);
         let wait_for_manual_close_clone = wait_for_manual_close.clone();
 
         let close_read_join = tokio::spawn(async move {
@@ -387,7 +387,7 @@ impl ToxicRunner {
         if let Some(closer) = self.closer.take() {
             let _ = closer.close();
         }
-        return result;
+        result
     }
 }
 

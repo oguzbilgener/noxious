@@ -112,7 +112,7 @@ mod tests {
         pause();
         test_latency(latency, 0, 0).await;
         let duration = Instant::now().duration_since(beginning);
-        assert_eq!(true, duration.as_millis() > latency as u128);
+        assert!(duration.as_millis() > latency as u128);
         resume();
     }
 
@@ -124,7 +124,7 @@ mod tests {
         pause();
         test_latency(latency, jitter, 1).await;
         let duration = Instant::now().duration_since(beginning);
-        assert_eq!(true, duration.as_millis() > latency as u128);
+        assert!(duration.as_millis() > latency as u128);
         resume();
     }
 }

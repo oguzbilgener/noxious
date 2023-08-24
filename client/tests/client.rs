@@ -12,7 +12,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 #[tokio::test]
 async fn get_proxies_empty() {
     let mock_server = MockServer::start().await;
-    let body = serde_json::to_value(&HashMap::<String, ProxyWithToxics>::new()).unwrap();
+    let body = serde_json::to_value(HashMap::<String, ProxyWithToxics>::new()).unwrap();
     Mock::given(method("GET"))
         .and(path("/proxies"))
         .respond_with(ResponseTemplate::new(200).set_body_json(body))
@@ -301,7 +301,7 @@ async fn disable_proxy() {
     assert_eq!(Ok(proxy.clone()), result);
 
     assert_ok!(proxy.disable().await);
-    assert_eq!(false, proxy.is_enabled());
+    assert!(!proxy.is_enabled());
 }
 
 #[tokio::test]
@@ -345,7 +345,7 @@ async fn enable_proxy() {
     assert_eq!(Ok(proxy.clone()), result);
 
     assert_ok!(proxy.enable().await);
-    assert_eq!(true, proxy.is_enabled());
+    assert!(proxy.is_enabled());
 }
 
 #[tokio::test]

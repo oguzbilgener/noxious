@@ -350,11 +350,11 @@ mod tests {
         let server1 = proxies.get("server1").unwrap();
         assert_eq!("127.0.0.1:5431", server1.proxy.listen);
         assert_eq!("127.0.0.1:5432", server1.proxy.upstream);
-        assert_eq!(true, server1.proxy.enabled);
+        assert!(server1.proxy.enabled);
         let server2 = proxies.get("server2").unwrap();
         assert_eq!("127.0.0.1:27017", server2.proxy.listen);
         assert_eq!("127.0.0.1:27018", server2.proxy.upstream);
-        assert_eq!(false, server2.proxy.enabled);
+        assert!(!server2.proxy.enabled);
     }
 
     #[tokio::test]
@@ -627,7 +627,7 @@ mod tests {
             .method("POST")
             .path("/proxies/server1/toxics")
             .header(CONTENT_TYPE, "application/json")
-            .body(&payload);
+            .body(payload);
         let reply = req.reply(&filter).await;
         assert_eq!(StatusCode::OK, reply.status());
         let body: Toxic = serde_json::from_slice(reply.body()).unwrap();
@@ -840,16 +840,14 @@ mod tests {
     #[tokio::test]
     async fn empty_body_filter() {
         let filter = util::empty_body();
-        assert_eq!(
-            false,
-            warp::test::request()
+        assert!(
+            !(warp::test::request()
                 .method("POST")
                 .body("stuff")
                 .matches(&filter)
-                .await
+                .await)
         );
-        assert_eq!(
-            true,
+        assert!(
             warp::test::request()
                 .method("POST")
                 .body(b"")
@@ -862,13 +860,12 @@ mod tests {
     async fn body_limit_filter() {
         let filter = util::parse_body::<Vec<u8>>();
         let large_body: [u8; 1024 * 65] = [1; 1024 * 65];
-        assert_eq!(
-            false,
-            warp::test::request()
+        assert!(
+            !(warp::test::request()
                 .method("POST")
                 .body(large_body)
                 .matches(&filter)
-                .await
+                .await)
         );
     }
 }

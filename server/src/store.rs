@@ -142,9 +142,7 @@ impl Store {
     pub async fn get_proxies(&self) -> Result<Vec<ProxyWithToxics>> {
         let state = self.shared.get_state();
         Ok(state
-            .proxies
-            .iter()
-            .map(|(_, handle)| ProxyWithToxics::from_shared_proxy_info(handle.info.clone()))
+            .proxies.values().map(|handle| ProxyWithToxics::from_shared_proxy_info(handle.info.clone()))
             .collect())
     }
 
@@ -497,7 +495,7 @@ pub mod tests {
     /// because we can't make this mocked run function async
     pub fn hack_handle_id(store: Store, info: &SharedProxyInfo) {
         let mut state = store.shared.get_state();
-        if let Some(mut handle) = state.proxies.get_mut(&info.config.name) {
+        if let Some(handle) = state.proxies.get_mut(&info.config.name) {
             handle.id = 99999999;
         }
     }
@@ -648,7 +646,7 @@ pub mod tests {
         assert_eq!("foo", result[0].proxy.name);
         assert_eq!("bar", result[1].proxy.name);
         assert_eq!("baz", result[2].proxy.name);
-        assert_eq!(false, result[2].proxy.enabled);
+        assert!(!result[2].proxy.enabled);
     }
 
     #[tokio::test]
@@ -861,7 +859,7 @@ pub mod tests {
             .await
             .unwrap();
         assert_eq!("foo", result.proxy.name);
-        assert_eq!(false, result.proxy.enabled);
+        assert!(!result.proxy.enabled);
         assert_eq!(None, result.proxy.rand_seed);
         // Keeps the toxic
         assert_eq!("footox!", result.toxics[0].get_name());

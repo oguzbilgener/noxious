@@ -18,7 +18,7 @@ pub async fn run_timeout(
         pin!(input);
         // Drain the input until it's closed
         while let Some(chunk) = input.next().await {
-            drain.write(&chunk).await?;
+            drain.write_all(&chunk).await?;
         }
     } else {
         input

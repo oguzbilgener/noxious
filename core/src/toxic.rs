@@ -433,7 +433,7 @@ mod tests {
     fn test_toxicity_de_int() {
         let input =
             "{\"type\":\"noop\",\"name\":\"foo\",\"toxicity\":1,\"direction\":\"downstream\"}";
-        let deserialized = from_str(&input).unwrap();
+        let deserialized = from_str(input).unwrap();
         let expected = Toxic {
             kind: ToxicKind::Noop,
             name: "foo".to_owned(),
@@ -449,10 +449,10 @@ mod tests {
             "{\"type\":\"latency\",\"attributes\":{\"latency\":21,\"jitter\":0},\"name\":\"lat\",\"toxicity\":1,\"direction\":\"downstream\"}";
         let input_err =
             "{\"type\":\"latency\",\"attributes\":{\"latency\":-21,\"jitter\":0},\"name\":\"lat\",\"toxicity\":1,\"direction\":\"downstream\"}";
-        let deserialized_ok: Result<Toxic, SerdeError> = from_str(&input_ok);
-        let deserialized_err: Result<Toxic, SerdeError> = from_str(&input_err);
+        let deserialized_ok: Result<Toxic, SerdeError> = from_str(input_ok);
+        let deserialized_err: Result<Toxic, SerdeError> = from_str(input_err);
 
-        assert_eq!(true, deserialized_ok.is_ok());
+        assert!(deserialized_ok.is_ok());
         assert_eq!(
             "invalid value: integer `-21`, expected u64 at line 1 column 109",
             deserialized_err.unwrap_err().to_string()
@@ -469,7 +469,7 @@ mod tests {
             direction: StreamDirection::Downstream,
         };
 
-        let mut deserialized: Toxic = from_str(&input).unwrap();
+        let mut deserialized: Toxic = from_str(input).unwrap();
         assert_eq!("", &deserialized.name);
         deserialized.set_default_name();
         assert_eq!(expected, deserialized);
@@ -488,7 +488,7 @@ mod tests {
             direction: StreamDirection::Downstream,
         };
 
-        let mut deserialized: Toxic = from_str(&input).unwrap();
+        let mut deserialized: Toxic = from_str(input).unwrap();
         assert_eq!("", &deserialized.name);
         deserialized.set_default_name();
         assert_eq!(expected, deserialized);
@@ -504,7 +504,7 @@ mod tests {
             direction: StreamDirection::Downstream,
         };
 
-        let mut deserialized: Toxic = from_str(&input).unwrap();
+        let mut deserialized: Toxic = from_str(input).unwrap();
         assert_eq!("", &deserialized.name);
         deserialized.set_default_name();
         assert_eq!(expected, deserialized);
@@ -520,7 +520,7 @@ mod tests {
             direction: StreamDirection::Downstream,
         };
 
-        let mut deserialized: Toxic = from_str(&input).unwrap();
+        let mut deserialized: Toxic = from_str(input).unwrap();
         assert_eq!("", &deserialized.name);
         deserialized.set_default_name();
         assert_eq!(expected, deserialized);
@@ -536,7 +536,7 @@ mod tests {
             direction: StreamDirection::Downstream,
         };
 
-        let mut deserialized: Toxic = from_str(&input).unwrap();
+        let mut deserialized: Toxic = from_str(input).unwrap();
         assert_eq!("", &deserialized.name);
         deserialized.set_default_name();
         assert_eq!(expected, deserialized);
@@ -556,7 +556,7 @@ mod tests {
             direction: StreamDirection::Downstream,
         };
 
-        let mut deserialized: Toxic = from_str(&input).unwrap();
+        let mut deserialized: Toxic = from_str(input).unwrap();
         assert_eq!("", &deserialized.name);
         deserialized.set_default_name();
         assert_eq!(expected, deserialized);
@@ -572,7 +572,7 @@ mod tests {
             direction: StreamDirection::Downstream,
         };
 
-        let mut deserialized: Toxic = from_str(&input).unwrap();
+        let mut deserialized: Toxic = from_str(input).unwrap();
         assert_eq!("", &deserialized.name);
         deserialized.set_default_name();
         assert_eq!(expected, deserialized);

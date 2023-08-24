@@ -126,7 +126,7 @@ impl ToxicStateHolder {
         let inner = self.inner.lock().expect("ToxicStateHolder lock poisoned");
         inner
             .get(toxic_name)
-            .map(|toxic_state| Arc::clone(toxic_state))
+            .map(Arc::clone)
     }
 }
 
@@ -147,9 +147,8 @@ mod tests {
             }],
         };
         let holder = ToxicStateHolder::for_toxics(&toxics);
-        assert_eq!(true, holder.is_some());
-        assert_eq!(
-            true,
+        assert!(holder.is_some());
+        assert!(
             holder
                 .clone()
                 .unwrap()
@@ -157,7 +156,7 @@ mod tests {
                 .is_none()
         );
         let state = holder.unwrap().get_state_for_toxic("limiter");
-        assert_eq!(true, state.is_some());
+        assert!(state.is_some());
         let state = state.unwrap();
         let data = state.lock().await;
         assert_eq!(
@@ -183,6 +182,6 @@ mod tests {
             }],
         };
         let holder = ToxicStateHolder::for_toxics(&toxics);
-        assert_eq!(true, holder.is_none());
+        assert!(holder.is_none());
     }
 }
