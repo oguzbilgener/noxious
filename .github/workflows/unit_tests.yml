@@ -106,7 +106,7 @@ jobs:
         uses: svenstaro/upload-release-action@v1-release
         if: steps.semantic_release.outputs.tag != ''
         with:
-          repo_token: ${{ secrets.PAT }}
+          repo_token: ${{ secrets.GH_TOKEN }}
           file: ./target/release/noxious-server
           asset_name: noxious-server-${{ steps.semantic_release.outputs.tag }}-linux-amd64
           tag: ${{ steps.semantic_release.outputs.tag }}
@@ -116,6 +116,6 @@ jobs:
         uses: peter-evans/repository-dispatch@v1
         if: steps.semantic_release.outputs.tag != ''
         with:
-          token: ${{ secrets.PAT }}
+          token: ${{ secrets.GH_TOKEN }}
           event-type: build-artifacts
           client-payload: '{"tag": "${{ steps.semantic_release.outputs.tag }}", "version": "${{ steps.semantic_release.outputs.version }}" }'

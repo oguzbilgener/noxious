@@ -1,4 +1,4 @@
-FROM rust:1.51 as depbuild
+FROM rust:1.72 as depbuild
 # This is a stage with built dependencies and a dummy server project
 WORKDIR /usr/src
 COPY ./Cargo.toml ./Cargo.toml
@@ -17,7 +17,7 @@ RUN rm ./target/release/noxious-server*
 
 # -----------
 
-FROM rust:1.51 as serverbuild
+FROM rust:1.72 as serverbuild
 WORKDIR /usr/src
 COPY --from=depbuild /usr/src/Cargo.toml ./Cargo.toml
 COPY --from=depbuild /usr/src/Cargo.lock ./Cargo.lock
